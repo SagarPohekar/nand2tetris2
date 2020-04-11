@@ -1,0 +1,5 @@
+projects/
+tools/
+*.exe
+out/
+.vs/

@@ -1,2 +1,2 @@
-# nand2tetris2
-Nand2Tetris Part2
+# nand2tetris1
+Nand2Tetris Course Part 1
