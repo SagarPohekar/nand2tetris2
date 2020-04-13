@@ -22,8 +22,8 @@ public:
 
 public:
   inline void setDumpCommands(const bool value) noexcept { m_dump_commands = value; };
-  void writeArithmetic(const std::string& instruction);
-  void writePushPop(const std::vector<std::string>& tokens);
+  std::string writeArithmetic(const std::string& instruction);
+  std::string writePushPop(const std::vector<std::string>& tokens);
   std::string getCurrentFileName() const noexcept;
 
 #if PROJECTPHASE > 1

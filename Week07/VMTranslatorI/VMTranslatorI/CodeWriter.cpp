@@ -18,29 +18,42 @@ CodeWriter::CodeWriter(const std::filesystem::path& outputFilePath)
 //-------------------------------------------------------------------------------------------
 // CodeWriter::writeArithmetic
 //-------------------------------------------------------------------------------------------
-void CodeWriter::writeArithmetic(const std::string& instruction)
+std::string CodeWriter::writeArithmetic(const std::string& instruction)
 {
   std::unique_ptr<CommandProcessor> upALP = std::make_unique<ArithmeticLogicalProcessor>();
   upALP->loadFunctions();
-  m_output_file << upALP->processCmd(instruction) << '\n';
+  std::string instructions{ "" };
+
+  try {
+    instructions = upALP->processCmd(instruction);
+    m_output_file << instructions << '\n';
+  }
+  catch (const std::exception& e) {
+    std::cerr << e.what() << '\n'
+      << "Unbale to process instruction" << instruction << '\n';
+    throw;
+  }
+  return instructions;
 }
 
 //-------------------------------------------------------------------------------------------
 // CodeWriter::writePushPop
 //-------------------------------------------------------------------------------------------
-void CodeWriter::writePushPop(const std::vector<std::string>& tokens)
+std::string CodeWriter::writePushPop(const std::vector<std::string>& tokens)
 {
   MemoryAccessProcessor mlp{ *this };
   mlp.loadFunctions();
+  std::string instructions{ "" };
   try {
-    m_output_file << mlp.processCmd(tokens) << '\n';
+    instructions = mlp.processCmd(tokens);
+    m_output_file << instructions << '\n';
   }
   catch (const std::exception& e) {
     std::cerr << e.what() << '\n'
       << "Unbale to process push/pop instruction" << '\n';
     throw;
   }
-  
+  return instructions;
 }
 
 //-------------------------------------------------------------------------------------------
@@ -74,378 +87,113 @@ std::string ArithmeticLogicalProcessor::processCmd(const std::string& cmd)
 void ArithmeticLogicalProcessor::loadFunctions()
 {
   if (m_function.size()) return;
+  const char nl{ '\n' };
 
-  m_function["add"] = []() { 
+  auto arithmetic = [=](const std::string& cmd) {
     std::ostringstream oss;
-    oss << "// add"  << '\n'
-      // pop arg2
-      << "@SP" << '\n'
-      << "M=M-1" << " // SP--, pop arg2 " << '\n'
-      << '\n'
+    oss << "@SP\n"
+        << "AM=M-1"   << " // SP--\n"
+        << "D=M"      << " // D = *SP\n"
+        << "A=A-1"    << " // A = SP - 1\n"
+        << cmd << '\n'  << '\n';
 
-      // store arg2 in D register
-      << "@SP" << '\n'
-      << "A=M" << '\n'
-      << "D=M" << " // D = *SP" << '\n'
-      << '\n'
+    return oss.str();
+  };
 
-      // pop arg1, SP--
-      << "@SP" << '\n'
-      << "M=M-1" << " // SP--, pop arg1 " << '\n'
-      << '\n'
+  auto logical = [=](const std::string& cmd, const std::string& jmp) {
+    static size_t index{ 0 };
+    std::ostringstream oss;
+    oss << "@SP\n"
+      << "AM=M-1" << " // SP--\n"
+      << "D=M" << " // D = *SP\n"
+      << "A=A-1" << " // A = SP - 1\n"
+      << "D=M-D" << " // D = arg1 - arg2\n"
 
-      // store arg1 + arg2 in D register
-      << "@SP" << '\n'
-      << "A=M" <<'\n'
-      << "M=D+M" << " // D = arg1 + arg2" << '\n'
-      << '\n'
+      // if D jmp 0 then goto _$EQUAL$EQ#index else continue
+      << "@_$FALSESTATE$" << std::to_string(index) << nl
+      << "D;" << jmp << nl
+      << nl
 
-      // SP++
-      << "@SP" << '\n'
-      << "M=M+1" << " // SP++" << '\n'
-      << '\n';
+      // RAM[SP] = -1; arg1 cmd arg2, goto _$CONTINUESTATE$#index
+      << "@SP\n"
+      << "A=M-1\n"
+      << "M=-1" << " // arg1 " << cmd <<" arg2\n"
+      << "@_$CONTINUESTATE$" << std::to_string(index) << nl
+      << "0;JMP\n"
+      << nl
+
+      // label _$FALSESTATE$#index
+      // if arg1 != arg2, RAM[SP] = 0 
+      << "(_$FALSESTATE$" << std::to_string(index) << ")" << nl
+      << "  @SP\n"
+      << "  A=M-1\n"
+      << "  M=0" << " // !(arg1 " << cmd << " arg2)\n"
+
+      // label _$FALSESTATE$#index
+      << "(_$CONTINUESTATE$" << std::to_string(index) << ")" << nl
+      << nl;
+
+    index++;
+    return oss.str();
+  };
+
+  m_function["add"] = [=]() { 
+    std::ostringstream oss;
+    oss << "// add\n" << arithmetic("M=D+M");
     return oss.str(); 
   };
 
-  m_function["sub"] = []() {
+  m_function["sub"] = [=]() {
     std::ostringstream oss;
-    oss << "// sub" << '\n'
-      // pop arg2
-      << "@SP" << '\n'
-      << "M=M-1" << " // SP--, pop arg2 " << '\n'
-      << '\n'
-
-      // store arg2 in D register
-      << "@SP" << '\n'
-      << "A=M" << '\n'
-      << "D=M" << " // D = *SP" << '\n'
-      << '\n'
-
-      // pop arg1, SP--
-      << "@SP" << '\n'
-      << "M=M-1" << " // SP--, pop arg1 " << '\n'
-      << '\n'
-
-      // store arg1 - arg2 in RAM[SP] register
-      << "@SP" << '\n'
-      << "A=M" << '\n'
-      << "M=M-D" << " // *SP = arg1 - arg2" << '\n'
-      << '\n'
-
-      //// write result in *SP = D
-      //<< "@SP" << '\n'
-      //<< "A=M" << '\n'
-      //<< "M=D" << " // *SP = D" << '\n'
-      //<< '\n'
-      
-      // SP++
-      << "@SP" << '\n'
-      << "M=M+1" << " // SP++" << '\n'
-      << '\n';
+    oss << "// sub\n" << arithmetic("M=M-D");
     return oss.str();
   };
 
-  m_function["neg"] = []() {
+  m_function["neg"] = [=]() {
     std::ostringstream oss;
-    oss << "// neg" << '\n'
-
-      // pop arg, SP--
-      << "@SP" << '\n'
-      << "M=M-1" << " // SP--, pop arg " << '\n'
-      << '\n'
-
-      // Negate the D = -RAM[SP]
-      << "@SP" << '\n'
-      << "A=M" << '\n'
-      << "M=-M" << " // *SP = -arg" << '\n'
-      << '\n'
-
-      //// RAM[SP] = D
-      //<< "@SP" << '\n'
-      //<< "A=M" << '\n'
-      //<< "M=D" << " // RAM[SP] = -arg" << '\n'
-      //<< '\n'
-
-      // SP++
-      << "@SP" << '\n'
-      << "M=M+1" << " // SP++" << '\n'
-      << '\n';
-
+    oss << "// neg\n"
+      << "@SP\n"
+      << "A=M-1\n"
+      << "M=-M\n" << nl;
     return oss.str();
   };
 
-  m_function["eq"] = []() {
-    static size_t index{ 0 };
+  m_function["eq"] = [=]() {
     std::ostringstream oss;
-    oss << "// eq" << '\n'
-
-      //pop arg2 SP--
-      << "@SP" << '\n'
-      << "M=M-1" << " // SP--, pop arg2 " << '\n'
-      << '\n'
-
-      // store D = RAM[SP]
-      << "@SP" << '\n'
-      << "A=M" << '\n'
-      << "D=M" << " // D = *SP" << '\n'
-      << '\n'
-
-      // pop arg1 , SP--
-      << "@SP" << '\n'
-      << "M=M-1" << " // SP--, pop arg1 " << '\n'
-      << '\n'
-
-      // D = arg1 - arg2
-      << "@SP" << '\n'
-      << "A=M" << '\n'
-      << "D=M-D" << " // D = arg1 - arg2" << '\n'
-      << '\n'
-
-      // if D == 0 then goto _$EQUAL$EQ#index else continue
-      << "@_$EQUAL$EQ" << std::to_string(index) << '\n'
-      << "D;JEQ" << '\n'
-      << '\n'
-
-      // RAM[SP] = 0; arg1 != arg2, goto _$END$EQ#index
-      << "@SP" << '\n'
-      << "A=M" << '\n'
-      << "M=0" << " // arg1 != arg2" << '\n'
-      << "@_$END$EQ" << std::to_string(index) << '\n'
-      << "0;JMP" << '\n'
-      << '\n'
-
-      // label _$EQUAL$EQ#index
-      // if arg1 == arg2, RAM[SP] = -1 (set all bits to 1), goto _$END$EQ#index
-      << "(_$EQUAL$EQ" << std::to_string(index) <<")" << '\n'
-      << "  @SP" << '\n'
-      << "  A=M" << '\n'
-      << "  M=-1" << "// arg1 == arg2" << '\n'
-      << "  @_$END$EQ" << std::to_string(index) << '\n'
-      << "  0;JMP" << '\n'
-      << '\n'
-
-      // Label _$END$EQ#index, SP++
-      << "(_$END$EQ" << std::to_string(index) << ")" << '\n'
-      << "  @SP" << '\n'
-      << "  M=M+1" << " // SP++" << '\n'
-      << '\n';
-
-    index++;
+    oss << "// eq\n" << logical("==", "JNE") << nl;
     return oss.str();
   };
 
-  m_function["gt"] = []() {
-    static size_t index{ 0 };
+  m_function["gt"] = [=]() {
     std::ostringstream oss;
-    oss << "// gt" << '\n'
-
-      // pop arg2 , SP--
-      << "@SP" << '\n'
-      << "M=M-1" << " // SP--, pop arg2 " << '\n'
-      << '\n'
-
-      // D = RAM[SP]
-      << "@SP" << '\n'
-      << "A=M" << '\n'
-      << "D=M" << " // D = *SP" << '\n'
-      << '\n'
-
-      // pop arg1, SP--
-      << "@SP" << '\n'
-      << "M=M-1" << " // SP--, pop arg1 " << '\n'
-      << '\n'
-
-      // if (arg1 > arg2)  goto _$GREATER$GT#index else continue
-      << "@SP" << '\n'
-      << "A=M" << '\n'
-      << "D=M-D" << " // D = arg1 - arg2" << '\n'
-      << "@_$GREATER$GT" << std::to_string(index) << '\n'
-      << "D;JGT" << '\n'
-      << '\n'
-
-      // if !(arg1 > arg2) 
-      << "@SP" << '\n'
-      << "A=M" << '\n'
-      << "M=0" << " // arg1 < arg2" << '\n'
-      << "@_$END$GT" << std::to_string(index) << '\n'
-      << "0;JMP" << '\n'
-      << '\n'
-
-      // Label _$GREATER$GT#index
-      << "(_$GREATER$GT" << std::to_string(index) <<")" << '\n'
-      << "  @SP" << '\n'
-      << "  A=M" << '\n'
-      << "  M=-1" << "// arg1 == arg2" << '\n'
-      << "  @_$END$GT" << std::to_string(index) << '\n'
-      << "  0;JMP" << '\n'
-      << '\n'
-
-      // Label _$END$GT#index, SP++
-      << "(_$END$GT" << std::to_string(index) << ")" << '\n'
-      << "  @SP" << '\n'
-      << "  M=M+1" << " // SP++" << '\n'
-      << '\n';
-
-    index++;
+    oss << "// gt\n" << logical(">", "JLE") << nl;
     return oss.str();
   };
 
-  m_function["lt"] = []() {
-    static size_t index{ 0 };
+  m_function["lt"] = [=]() {
     std::ostringstream oss;
-    oss << "// lt" << '\n'
-
-      // pop arg2 , SP--
-      << "@SP" << '\n'
-      << "M=M-1" << " // SP--, pop arg2 " << '\n'
-      << '\n'
-
-      // D = RAM[SP]
-      << "@SP" << '\n'
-      << "A=M" << '\n'
-      << "D=M" << " // D = *SP" << '\n'
-      << '\n'
-
-      // pop arg1 , SP--
-      << "@SP" << '\n'
-      << "M=M-1" << " // SP--, pop arg1 " << '\n'
-      << '\n'
-
-      // if (arg1 > arg2) then goto _$LESSER$LT#index
-      << "@SP" << '\n'
-      << "A=M" << '\n'
-      << "D=M-D" << " // D = arg1 - arg2" << '\n'
-      << "@_$LESSER$LT" << std::to_string(index) << '\n'
-      << "D;JLT" << '\n'
-      << '\n'
-
-      // !(arg1 < arg2)  
-      << "@SP" << '\n'
-      << "A=M" << '\n'
-      << "M=0" << " // arg1 != arg2" << '\n'
-      << "@_$END$LT" << std::to_string(index) << '\n'
-      << "0;JMP" << '\n'
-      << '\n'
-
-      // Label _$LESSER$LT
-      // if (arg1 < arg2) RAM[SP] = -1
-      << "(_$LESSER$LT" << std::to_string(index) << ")" << '\n'
-      << "  @SP" << '\n'
-      << "  A=M" << '\n'
-      << "  M=-1" << "// arg1 == arg2" << '\n'
-      << "  @_$END$LT" << std::to_string(index) << '\n'
-      << "  0;JMP" << '\n'
-      << '\n'
-
-      // Label _$END$LT, SP++
-      << "(_$END$LT" << std::to_string(index) << ")" << '\n'
-      << "  @SP" << '\n'
-      << "  M=M+1" << " // SP++" << '\n'
-      << '\n';
-    index++;
+    oss << "// lt\n" << logical("<", "JGE") << nl;
     return oss.str();
   };
 
-  m_function["and"] = []() {
+  m_function["and"] = [=]() {
     std::ostringstream oss;
-    oss << "// and" << '\n'
-
-      // pop arg2 , SP--
-      << "@SP" << '\n'
-      << "M=M-1" << " // SP--, pop arg2 " << '\n'
-      << '\n'
-
-      // D = RAM[SP]
-      << "@SP" << '\n'
-      << "A=M" << '\n'
-      << "D=M" << " // D = *SP" << '\n'
-      << '\n'
-
-      // pop arg1 , SP--
-      << "@SP" << '\n'
-      << "M=M-1" << " // SP--, pop arg1 " << '\n'
-      << '\n'
-
-      // RAM[SP] = arg1 & arg2
-      << "@SP" << '\n'
-      << "A=M" << '\n'
-      << "M=D&M" << " // *SP = arg1 & arg2" << '\n'
-      << '\n'
-
-      //// RAM[SP] = D
-      //<< "@SP" << '\n'
-      //<< "A=M" << '\n'
-      //<< "M=D" << " // RAM[SP] = arg1 & arg2" << '\n'
-      //<< '\n'
-
-      // SP++
-      << "@SP" << '\n'
-      << "M=M+1" << " // SP++" << '\n'
-      << '\n';
-
+    oss << "// and\n" << arithmetic("M=D&M");
     return oss.str();
   };
 
-  m_function["or"] = []() {
+  m_function["or"] = [=]() {
     std::ostringstream oss;
-    oss << "// or" << '\n'
-
-      // pop arg2 , SP--
-      << "@SP" << '\n'
-      << "M=M-1" << " // SP--, pop arg2 " << '\n'
-      << '\n'
-
-      // D = RAM[SP]
-      << "@SP" << '\n'
-      << "A=M" << '\n'
-      << "D=M" << " // D = *SP" << '\n'
-      << '\n'
-
-      // pop arg1 , SP--
-      << "@SP" << '\n'
-      << "M=M-1" << " // SP--, pop arg1 " << '\n'
-      << '\n'
-
-      // RAM[SP] = arg1 | arg2
-      << "@SP" << '\n'
-      << "A=M" << '\n'
-      << "M=D|M" << " // M = arg1 | arg2" << '\n'
-      << '\n'
-
-      /*// RAM[SP] = D
-      << "@SP" << '\n'
-      << "A=M" << '\n'
-      << "M=D" << " // RAM[SP] = arg1 | arg2" << '\n'
-      << '\n'*/
-
-      // SP++
-      << "@SP" << '\n'
-      << "M=M+1" << " // SP++" << '\n'
-      << '\n';
-
+    oss << "// or\n" << arithmetic("M=D|M");
     return oss.str();
   };
 
-  m_function["neg"] = []() {
+  m_function["not"] = [=]() {
     std::ostringstream oss;
-    oss << "// neg" << '\n'
-
-      // pop arg, SP--
-      << "@SP" << '\n'
-      << "M=M-1" << " // SP--, pop arg " << '\n'
-      << '\n'
-
-      // Negate the RAM[SP] = -RAM[SP]
-      << "@SP" << '\n'
-      << "A=M" << '\n'
-      << "M=!M" << " // RAM[SP] = -arg" << '\n'
-      << '\n'
-
-      // SP++
-      << "@SP" << '\n'
-      << "M=M+1" << " // SP++" << '\n'
-      << '\n';
-
+    oss << "// not\n"
+      << "@SP\n"
+      << "A=M-1\n"
+      << "M=!M\n" << nl;
     return oss.str();
   };
 }
@@ -533,134 +281,47 @@ void MemoryAccessProcessor::loadFunctions()
     return oss.str();
   };
 
-  m_function["push"]["local"] = [=](int index) {
+  auto pushSegment = [=](const std::string& id, const std::string& segment, int index) {
     std::ostringstream oss;
-    oss << "// push local" << index << nl
-      << loadIndexInD(index) << nl
+    oss << "// push " << id << ' ' << index << nl
 
-      // D = RAM[LCL + index] 
-      << "@LCL" << nl
-      << "A=D+A" << " // A = LCL + index" << nl
-      << "D=M" << " // D = RAM[LCL + index]" << nl
+      // D = index
+      << "@" << std::to_string(index) << nl
+      << "D=A" << nl
       << nl
 
-      << writeDtoRamSP() << nl
-      << push() << nl;
-    return oss.str();
-  };
-
-  m_function["push"]["argument"] = [=](int index) {
-    std::ostringstream oss;
-    oss << "// push argument" << index << nl
-      << loadIndexInD(index) << nl
-
-      // D = RAM[ARG + index] 
-      << "@ARG" << nl
-      << "A=D+A" << " // A = ARG + index" << nl
-      << "D=M" << " // D = RAM[ARG + index]" << nl
+      // D = RAM[segment + index] 
+      << "@" << segment << nl
+      << "A=D+M" << " // A = " << segment <<  " + " << index << nl
+      << "D=M" << " // D = RAM[" << segment << " + " << index << nl
       << nl
 
-      << writeDtoRamSP() << nl
-      << push() << nl;
-    return oss.str();
-  };
-
-  m_function["push"]["this"] = [=](int index) {
-    std::ostringstream oss;
-    oss << "// push this" << index << nl
-      << loadIndexInD(index) << nl
-
-      // D = RAM[THIS + index] 
-      << "@THIS" << nl
-      << "A=D+A" << " // A = THIS + index" << nl
-      << "D=M" << " // D = RAM[THIS + index]" << nl
+      // *SP = D
+      << "@SP" << nl
+      << "A=M" << nl
+      << "M=D" << nl
       << nl
 
-      << writeDtoRamSP() << nl
-      << push() << nl;
-    return oss.str();
+      // SP++
+      << "@SP" << nl
+      << "M=M+1" << " // SP++" << nl
+
+      << nl;
+      return oss.str();
   };
 
-  m_function["push"]["that"] = [=](int index) {
+  auto popToSegment = [=](const std::string& id, const std::string& segment, int index) {
     std::ostringstream oss;
-    oss << "// push that" << index << '\n'
-      << loadIndexInD(index) << nl
+    oss << "// pop " << id << ' '<< index << nl
 
-      // D = RAM[THAT + index] 
-      << "@THAT" << nl
-      << "A=D+A" << " // A = THAT + index" << nl
-      << "D=M" << " // D = RAM[THAT + index]" << nl
+      // D = index
+      << "@" << std::to_string(index) << nl
+      << "D=A" << nl
       << nl
 
-      << writeDtoRamSP() << nl
-      << push() << nl;
-    return oss.str();
-  };
-
-  m_function["push"]["constant"] = [=](int index) {
-    std::ostringstream oss;
-    oss << "// push constant" << index << nl
-      << loadIndexInD(index) << nl
-      << writeDtoRamSP() << nl
-      << push() << nl;
-    return oss.str();
-  };
-
-  m_function["push"]["static"] = [=](int index) {
-    std::ostringstream oss;
-    oss << "// push static " << index << '\n'
-      << loadIndexInD(index) << nl
-
-      << "@" << m_code_writer.getCurrentFileName() << '.' << index << nl
-      << "D=M" << nl
-      << nl
-
-      << writeDtoRamSP() << nl
-      << push() << nl;
-    return oss.str();
-  };
-
-  m_function["push"]["temp"] = [=](int index) {
-    std::ostringstream oss;
-    oss << "// push temp" << index << '\n'
-      << loadIndexInD(index) << nl
-
-      // *SP = RAM[5 + index]
-      << "@R5" << nl
-      << "A=D+A" << nl
-      << "D=M" << nl
-
-      << writeDtoRamSP() << nl
-      << push() << nl;
-    return oss.str();
-  };
-
-  m_function["push"]["pointer"] = [=](int index) {
-    std::ostringstream oss;
-    oss << "// push pointer" << index << '\n';
-      
-    if (0 == index) {
-      oss << "@THIS" << nl
-          << "D=A" << nl;
-    }
-    if (1 == index) {
-      oss << "@THAT" << nl
-          << "D=A" << nl;
-    }
-    oss << writeDtoRamSP() << nl
-        << push() << nl;
-
-    return oss.str();
-  };
-
-  m_function["pop"]["local"] = [=](int index) {
-    std::ostringstream oss;
-    oss << "// pop local" << index << nl
-
-      // D = LCL + index
-      << loadIndexInD(index) << nl
-      << "@LCL" << nl
-      << "D=D+A" << " // D = LCL + index" << nl
+      // D = segment + index
+      << "@" << segment << nl
+      << "D=D+M" << " // D = " << segment << " + index" << nl
       << nl
 
       // R13 = D (SP)
@@ -668,8 +329,11 @@ void MemoryAccessProcessor::loadFunctions()
       << "M=D" << " // R13 = D (SP)" << nl
       << nl
 
-      << pop() << nl
-      << writeRamSPtoD() << nl
+      << "// D = RAM[SP--]\n"
+      << "@SP\n" 
+      << "AM=M-1\n"
+      << "D=M\n"
+      << nl
 
       // RAM[LCL + index] = *SP
       << "@R13" << nl
@@ -681,93 +345,119 @@ void MemoryAccessProcessor::loadFunctions()
     return oss.str();
   };
 
+  m_function["push"]["local"] = [=](int index) {
+    std::ostringstream oss;
+    oss << pushSegment("local","LCL", index);
+    return oss.str();
+  };
+
+  m_function["push"]["argument"] = [=](int index) {
+    std::ostringstream oss;
+    oss << pushSegment("argument", "ARG", index);
+    return oss.str();
+  };
+
+  m_function["push"]["this"] = [=](int index) {
+    std::ostringstream oss;
+    oss << pushSegment("this", "THIS", index);
+    return oss.str();
+  };
+
+  m_function["push"]["that"] = [=](int index) {
+    std::ostringstream oss;
+    oss << pushSegment("that", "THAT", index);
+    return oss.str();
+  };
+
+  m_function["push"]["constant"] = [=](int index) {
+    std::ostringstream oss;
+    oss << "// push constant " << index << nl
+      << loadIndexInD(index)
+      << writeDtoRamSP()
+      << push();
+    return oss.str();
+  };
+
+  m_function["push"]["static"] = [=](int index) {
+    std::ostringstream oss;
+    oss << "// push static " << index << '\n'
+      << loadIndexInD(index)
+
+      << "@" << m_code_writer.getCurrentFileName() << '.' << index << nl
+      << "D=M" << nl
+      << nl
+
+      << writeDtoRamSP()
+      << push() << nl;
+    return oss.str();
+  };
+
+  m_function["push"]["temp"] = [=](int index) {
+    std::ostringstream oss;
+    oss << "// push temp " << index << '\n'
+      << loadIndexInD(index)
+
+      // *SP = RAM[5 + index]
+      << "@R5" << nl
+      << "A=D+A" << nl
+      << "D=M" << nl
+
+      << writeDtoRamSP()
+      << push() << nl;
+    return oss.str();
+  };
+
+  m_function["push"]["pointer"] = [=](int index) {
+    std::ostringstream oss;
+    oss << "// push pointer " << index << '\n';
+      
+    if (0 == index) {
+      oss << "@THIS" << nl
+          << "D=M" << nl;
+    }
+    if (1 == index) {
+      oss << "@THAT" << nl
+          << "D=M" << nl;
+    }
+    oss << writeDtoRamSP()
+        << push() << nl;
+
+    return oss.str();
+  };
+
+
+  m_function["pop"]["local"] = [=](int index) {
+    std::ostringstream oss;
+    oss << popToSegment("local", "LCL", index);
+    return oss.str();
+  };
+
   m_function["pop"]["argument"] = [=](int index) {
     std::ostringstream oss;
-    oss << "// pop argument" << index << nl
-
-      // D = ARG + index
-      << loadIndexInD(index) << nl
-      << "@ARG" << nl
-      << "D=D+A" << " // D = ARG + index" << nl
-      << nl
-
-      // R13 = D (SP)
-      << "@R13" << nl
-      << "M=D" << " // R13 = D (SP)" << nl
-      << nl
-
-      << pop() << nl
-      << writeRamSPtoD() << nl
-
-      // RAM[ARG + index] = *SP
-      << "@R13" << nl
-      << "A=M" << nl
-      << "M=D" << " // RAM[ARG + index] = *SP" << nl
-      << nl;
-
+    oss << popToSegment("argument", "ARG", index);
     return oss.str();
   };
 
   m_function["pop"]["this"] = [=](int index) {
     std::ostringstream oss;
-    oss << "// pop this" << index << nl
-
-      // D = THIS + index
-      << loadIndexInD(index) << nl
-      << "@THIS" << nl
-      << "D=D+A" << " // D = THIS + index" << nl
-      << nl
-
-      // R13 = D (SP)
-      << "@R13" << nl
-      << "M=D" << " // R13 = D (SP)" << nl
-      << nl
-
-      << pop() << nl
-      << writeRamSPtoD() << nl
-
-      // RAM[THIS + index] = *SP
-      << "@R13" << nl
-      << "A=M" << nl
-      << "M=D" << " // RAM[THIS + index] = *SP" << nl
-      << nl;
-
+    oss << popToSegment("this", "THIS", index);
     return oss.str();
   };
 
   m_function["pop"]["that"] = [=](int index) {
     std::ostringstream oss;
-    oss << "// pop that" << index << nl
-
-      // D = THAT + index
-      << loadIndexInD(index) << nl
-      << "@THAT" << nl
-      << "D=D+A" << " // D = THAT + index" << nl
-      << nl
-
-      // R13 = D (SP)
-      << "@R13" << nl
-      << "M=D" << " // R13 = D (SP)" << nl
-      << nl
-
-      << pop() << nl
-      << writeRamSPtoD() << nl
-
-      // RAM[THAT + index] = *SP
-      << "@R13" << nl
-      << "A=M" << nl
-      << "M=D" << " // RAM[THAT + index] = *SP" << nl
-      << nl;
-
+    oss << popToSegment("that", "THAT", index);
     return oss.str();
   };
 
   m_function["pop"]["static"] = [=](int index) {
     std::ostringstream oss;
-    oss << "// pop static" << index << nl
+    oss << "// pop static " << index << nl
 
-      << pop() << nl
-      << writeRamSPtoD() << nl
+      // D = *SP
+      << "@SP\n"
+      << "AM=M-1\n"
+      << "D=M\n"
 
       // @filename.index = D
       << "@" << m_code_writer.getCurrentFileName() << '.' << index << nl
@@ -779,12 +469,12 @@ void MemoryAccessProcessor::loadFunctions()
 
   m_function["pop"]["temp"] = [=](int index) {
     std::ostringstream oss;
-    oss << "// pop temp" << index << nl
+    oss << "// pop temp " << index << nl
 
       // D = R5 + index
-      << loadIndexInD(index) << nl
+      << loadIndexInD(index)
       << "@R5" << nl
-      << "D=D+A" << " // D = THAT + index" << nl
+      << "D=D+A" << " // D = R5 + index" << nl
       << nl
 
       // R13 = D (SP)
@@ -792,13 +482,15 @@ void MemoryAccessProcessor::loadFunctions()
       << "M=D" << " // R13 = D (SP)" << nl
       << nl
 
-      << pop() << nl
-      << writeRamSPtoD() << nl
+      // D = *SP
+      << "@SP\n"
+      << "AM=M-1\n"
+      << "D=M\n"
 
       // RAM[R5 + index] = *SP
       << "@R13" << nl
       << "A=M" << nl
-      << "M=D" << " // RAM[THAT + index] = *SP" << nl
+      << "M=D" << " // RAM[R5 + index] = *SP" << nl
       << nl;
 
     return oss.str();
@@ -806,18 +498,22 @@ void MemoryAccessProcessor::loadFunctions()
 
   m_function["pop"]["pointer"] = [=](int index) {
     std::ostringstream oss;
-    oss << "// pop pointer" << index << nl
-      << pop() << nl
-      << writeRamSPtoD() << nl;
+    oss << "// pop pointer " << index << nl
+
+      // D = *SP
+      << "@SP\n"
+      << "AM=M-1\n"
+      << "D=M\n";
 
     if (0 == index) {
       oss << "@THIS" << nl
-        << "M=D" << nl;
+          << "M=D" << nl;
     }
     if (1 == index) {
       oss << "@THAT" << nl
-        << "M=D" << nl;
+          << "M=D" << nl;
     }
+    
       oss << nl;
     return oss.str();
   };

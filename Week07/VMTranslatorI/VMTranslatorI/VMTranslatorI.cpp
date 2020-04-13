@@ -19,8 +19,10 @@ int main(int argc, char* argv[])
 	}
 
 	bool dumpCommands{ false };
-	if (argc >= 3 && argv[argc - 1] == "-d") {
-		dumpCommands = true;
+	if (argc >= 3 ) {
+		std::string d{ argv[argc - 1] };
+		if (d == "-d")
+			dumpCommands = true;
 	}
 
 	fs::path sourceFilePath{ argv[1] };
@@ -47,21 +49,30 @@ int main(int argc, char* argv[])
 		auto currentVMInstruction = parser.advance();
 		auto type = parser.getCommandType();
 		std::vector<std::string> cmdTokens{};
+		std::string assemblyInstructions{ "" };
 
 		if (dumpCommands)
-			std::clog << currentVMInstruction << '\n';
+			std::clog << "Processing...: " << currentVMInstruction << '\n';
 		try {
 			switch (type)
 			{
 			case CommandType::Invalid:
 				break;
 			case CommandType::ArithmeticLogical:
-				codeWriter.writeArithmetic(currentVMInstruction);
+			{
+				assemblyInstructions = codeWriter.writeArithmetic(currentVMInstruction);
+				if (dumpCommands)
+					std::clog << assemblyInstructions << '\n';
 				break;
+			}
 			case CommandType::MemoryAccess:
+			{
 				cmdTokens = parser.getCommandTokens();
-				codeWriter.writePushPop(cmdTokens);
+				assemblyInstructions = codeWriter.writePushPop(cmdTokens);
+				if (dumpCommands)
+					std::clog << assemblyInstructions << '\n';
 				break;
+			}
 			case CommandType::Branching:
 				break;
 			case CommandType::Functional:
