@@ -361,8 +361,8 @@ void MemoryAccessProcessor::loadFunctions()
       // SP++
       << "@SP" << nl
       << "M=M+1" << " // SP++" << nl
-
       << nl;
+
       return oss.str();
   };
 
@@ -395,7 +395,6 @@ void MemoryAccessProcessor::loadFunctions()
       << "@R13" << nl
       << "A=M" << nl
       << "M=D" << " // RAM[LCL + index] = *SP" << nl
-      << nl
       << nl;
 
     return oss.str();
@@ -444,7 +443,8 @@ void MemoryAccessProcessor::loadFunctions()
       << nl
 
       << writeDtoRamSP()
-      << push() << nl;
+      << push();
+
     return oss.str();
   };
 
@@ -459,7 +459,7 @@ void MemoryAccessProcessor::loadFunctions()
       << "D=M" << nl
 
       << writeDtoRamSP()
-      << push() << nl;
+      << push();
     return oss.str();
   };
 
@@ -476,7 +476,7 @@ void MemoryAccessProcessor::loadFunctions()
           << "D=M" << nl;
     }
     oss << writeDtoRamSP()
-        << push() << nl;
+        << push();
 
     return oss.str();
   };

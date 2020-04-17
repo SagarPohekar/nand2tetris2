@@ -25,10 +25,9 @@ int main(int argc, char* argv[])
 			dumpCommands = true;
 	}
 	
-	bool isDir{ false };
 	fs::path sourcePath{ argv[1] };
-	isDir = fs::is_directory(sourcePath);
-
+	const bool isDir = fs::is_directory(sourcePath);
+	const bool curDir = sourcePath.stem().string() == ".";
 
 	if (!isDir && !fs::exists(sourcePath)) {
 		std::cerr << "File: " << sourcePath.c_str() << " does not exits" << '\n';
@@ -47,9 +46,11 @@ int main(int argc, char* argv[])
 			filePaths.push_back(path);
 	}
 
-	// TO DO : if dir == . then retrieve parent directory name
-	if (isDir) {
+	if (isDir && !curDir) {
 		outputFilePath = sourcePath  / fs::path{ sourcePath.stem().string() + ".asm" };
+	}
+	else if (isDir && curDir) {
+		outputFilePath = fs::current_path() / (fs::current_path().stem().string() + ".asm");
 	}
 	else {
 		outputFilePath = sourcePath.replace_extension(".asm");
