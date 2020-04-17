@@ -17,6 +17,15 @@ CodeWriter::CodeWriter(const std::filesystem::path& outputFilePath)
 }
 
 //-------------------------------------------------------------------------------------------
+// CodeWriter::~CodeWriter
+//-------------------------------------------------------------------------------------------
+CodeWriter::~CodeWriter()
+{
+  if (m_is_file_open)
+    m_output_file.close();
+}
+
+//-------------------------------------------------------------------------------------------
 // CodeWriter::writeInit
 //-------------------------------------------------------------------------------------------
 void CodeWriter::writeInit()
@@ -46,20 +55,7 @@ void CodeWriter::writeInit()
 //-------------------------------------------------------------------------------------------
 std::string CodeWriter::writeArithmetic(const std::vector<std::string>& tokens)
 {
-  ArithmeticLogicalProcessor alp{};
-  alp.loadFunctions();
-  std::string instructions{ "" };
-
-  try {
-    instructions = alp.processCmd(tokens);
-    m_output_file << instructions << '\n';
-  }
-  catch (const std::exception& e) {
-    std::cerr << e.what() << '\n'
-      << "Unbale to process instruction" << tokens[0] << '\n';
-    throw;
-  }
-  return instructions;
+  return writeCommand<ArithmeticLogicalProcessor>(tokens, tokens[0].c_str());
 }
 
 //-------------------------------------------------------------------------------------------
@@ -67,19 +63,7 @@ std::string CodeWriter::writeArithmetic(const std::vector<std::string>& tokens)
 //-------------------------------------------------------------------------------------------
 std::string CodeWriter::writePushPop(const std::vector<std::string>& tokens)
 {
-  MemoryAccessProcessor mlp{ *this };
-  mlp.loadFunctions();
-  std::string instructions{ "" };
-  try {
-    instructions = mlp.processCmd(tokens);
-    m_output_file << instructions << '\n';
-  }
-  catch (const std::exception& e) {
-    std::cerr << e.what() << '\n'
-      << "Unbale to process push/pop instruction" << '\n';
-    throw;
-  }
-  return instructions;
+  return writeCommand<MemoryAccessProcessor>(tokens, "push/pop");
 }
 
 //-------------------------------------------------------------------------------------------
@@ -87,19 +71,7 @@ std::string CodeWriter::writePushPop(const std::vector<std::string>& tokens)
 //-------------------------------------------------------------------------------------------
 std::string CodeWriter::writeBranching(const std::vector<std::string>& tokens)
 {
-  BranchingProcessor bp{ *this };
-  bp.loadFunctions();
-  std::string instructions{ "" };
-  try {
-    instructions = bp.processCmd(tokens);
-    m_output_file << instructions << '\n';
-  }
-  catch (const std::exception& e) {
-    std::cerr << e.what() << '\n'
-      << "Unbale to process branching instruction" << '\n';
-    throw;
-  }
-  return instructions;
+  return writeCommand<BranchingProcessor>(tokens, "branching");
 }
 
 //-------------------------------------------------------------------------------------------
@@ -107,22 +79,15 @@ std::string CodeWriter::writeBranching(const std::vector<std::string>& tokens)
 //-------------------------------------------------------------------------------------------
 std::string CodeWriter::writeFunctional(const std::vector<std::string>& tokens)
 {
-  return std::string();
+  return writeCommand<FunctionalProcessor>(tokens, "functional");
 }
 
 //-------------------------------------------------------------------------------------------
-// CodeWriter::writeTextToOutputStream
+// CodeWriter::writeCommnetToOutputStream
 //-------------------------------------------------------------------------------------------
-void CodeWriter::writeTextToOutputStream(const std::string& txt)
+void CodeWriter::writeCommentToOutputStream(const std::string& txt)
 {
-}
-
-//-------------------------------------------------------------------------------------------
-// ArithmeticLogicalProcessor::Constructor
-//-------------------------------------------------------------------------------------------
-ArithmeticLogicalProcessor::ArithmeticLogicalProcessor()
-  : CommandProcessor{}
-{
+  this->m_output_file << "// " << txt << '\n' << '\n';
 }
 
 //-------------------------------------------------------------------------------------------
@@ -131,7 +96,8 @@ ArithmeticLogicalProcessor::ArithmeticLogicalProcessor()
 std::string ArithmeticLogicalProcessor::processCmd(const std::vector<std::string>& tokens)
 {
   try {
-    return m_function[tokens.at(0)]();
+    const std::string& vmcmd = tokens.at(0);
+    return m_function[vmcmd]();
   }
   catch (const std::exception& e) {
     std::cerr << e.what() << '\n';
@@ -257,36 +223,24 @@ void ArithmeticLogicalProcessor::loadFunctions()
 }
 
 //-------------------------------------------------------------------------------------------
-// ArithmeticLogicalProcessor::Constructor
-//-------------------------------------------------------------------------------------------
-MemoryAccessProcessor::MemoryAccessProcessor(const CodeWriter& cw)
-  : CommandProcessor{}, m_code_writer { cw }
-{
-}
-
-//-------------------------------------------------------------------------------------------
-// ArithmeticLogicalProcessor::processCmd
+// MemoryAccessProcessor::processCmd
 //-------------------------------------------------------------------------------------------
 std::string MemoryAccessProcessor::processCmd(const std::vector<std::string>& tokens)
 {
-  std::string vmcmd{ "" };
-  std::string segment{ "" };
-  int argValue{ 0 };
   try {
-    vmcmd = tokens.at(0);
-    segment = tokens.at(1);
-    argValue = std::stoi(tokens.at(2));
+    const std::string& vmcmd{ tokens.at(0) };
+    const std::string& segment{ tokens.at(1) };
+    const int argValue{ std::stoi(tokens.at(2)) };
+    return m_function[vmcmd][segment](argValue);
   }
   catch (const std::exception& e) {
     std::cerr << e.what() << '\n';
     throw;
   }
-
-  return m_function[vmcmd][segment](argValue);
 }
 
 //-------------------------------------------------------------------------------------------
-// ArithmeticLogicalProcessor::loadFunctions
+// MemoryAccessProcessor::loadFunctions
 //-------------------------------------------------------------------------------------------
 void MemoryAccessProcessor::loadFunctions()
 {
@@ -578,14 +532,6 @@ void MemoryAccessProcessor::loadFunctions()
 
 
 //-------------------------------------------------------------------------------------------
-// BranchingProcessor::Constructor
-//-------------------------------------------------------------------------------------------
-BranchingProcessor::BranchingProcessor(const CodeWriter& cw)
-  : CommandProcessor{}, m_code_writer{ cw }
-{
-}
-
-//-------------------------------------------------------------------------------------------
 // BranchingProcessor::processCmd
 //-------------------------------------------------------------------------------------------
 std::string BranchingProcessor::processCmd(const std::vector<std::string>& tokens)
@@ -641,13 +587,6 @@ void BranchingProcessor::loadFunctions()
   };
 }
 
-//-------------------------------------------------------------------------------------------
-// FunctionalProcessor::Constructor
-//-------------------------------------------------------------------------------------------
-FunctionalProcessor::FunctionalProcessor(const CodeWriter& cw)
-  : CommandProcessor{}, m_code_writer{ cw }
-{
-}
 
 //-------------------------------------------------------------------------------------------
 // FunctionalProcessor::processCmd
@@ -671,4 +610,61 @@ std::string FunctionalProcessor::processCmd(const std::vector<std::string>& toke
 //-------------------------------------------------------------------------------------------
 void FunctionalProcessor::loadFunctions()
 {
+  if (m_function.size()) return;
+
+  MemoryAccessProcessor mcp{ m_code_writer };
+  mcp.loadFunctions();
+  std::vector<std::string> tokens{ "push", "local","" };
+  const char nl{ '\n' };
+
+  m_function["function"] = [=,&tokens, &mcp](const std::string& arg, const int n) mutable {
+    std::ostringstream oss;
+    oss << "// function " /*<< m_code_writer.getCurrentSourceFileName() << "." */ << arg << '\n'
+      << "(" /*<< m_code_writer.getCurrentSourceFileName() << "."*/ << arg << ")" << '\n'
+      // *LCL = *SP
+      << "@SP" << nl
+      << "D=M" << nl
+      << "@LCL" << nl
+      << "M=D" << nl
+
+      // push 0th locals and initialize to 0
+      << "D=0" << nl
+      << "// *(LCL + 0) = 0" << nl
+      << "@SP" << nl
+      << "A=M" << nl
+      << "M=D" << nl
+      << nl;
+
+    //push n-1 local variables and initialize to 0
+    for (int i = 1; i < n; i++) {
+      oss << "// push local " << i << " = 0" << nl
+          << "A=A+1" << nl
+          << "M=D" << nl;
+    }
+    // SP = top of the stack
+    oss << "A=A+1" << nl
+      << "D=A" << nl
+      << "@SP" << nl
+      << "M=D" << nl
+      << nl;
+    return oss.str();
+  };
+
+  m_function["call"] = [=](const std::string& arg, const int n) {
+
+    std::ostringstream oss;
+    oss << "// call " << m_code_writer.getCurrentSourceFileName() << "." << arg << '\n'
+      << "(" << m_code_writer.getCurrentSourceFileName() << "$" << arg << ")" << '\n'
+      << '\n';
+    return oss.str();
+  };
+
+  m_function["return"] = [=](const std::string& arg, const int n) {
+
+    std::ostringstream oss;
+    oss << "// return " << m_code_writer.getCurrentSourceFileName() << "$" << arg << '\n'
+      << "(" << m_code_writer.getCurrentSourceFileName() << "$" << arg << ")" << '\n'
+      << '\n';
+    return oss.str();
+  };
 }

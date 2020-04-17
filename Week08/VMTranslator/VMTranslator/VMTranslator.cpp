@@ -57,13 +57,18 @@ int main(int argc, char* argv[])
 	}
 	
 	CodeWriter codeWriter{ outputFilePath };
+	if (!codeWriter.isOutputFileOpen()) {
+		std::cerr << "File: " << outputFilePath.c_str() << " cannot be opened." << '\n';
+		std::exit(-1);
+	}
+
 	codeWriter.setDumpCommands(dumpCommands);
 	codeWriter.writeInit();
 
 	for (auto const& sourceFilePath : filePaths) {
 
 		codeWriter.setCurrentSourceFile(sourceFilePath);
-
+		codeWriter.writeCommentToOutputStream(std::string{ "File: " } + sourceFilePath.filename().string());
 		Parser parser{ sourceFilePath };
 
 		if (!parser.readSourceFile()) {
