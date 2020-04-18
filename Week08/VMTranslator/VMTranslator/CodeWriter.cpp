@@ -42,7 +42,7 @@ void CodeWriter::writeInit()
       << "M=D" << '\n'
 
       // call Sys.main
-      << "@Sys.main" << '\n'
+      << "@Sys.init" << '\n'
       << "0;JMP" << '\n'
       << '\n';
 
@@ -273,21 +273,20 @@ void MemoryAccessProcessor::loadFunctions()
 
   auto writeDtoRamSP = [=]() {
     std::ostringstream oss;
-    oss << "// *SP = D" << nl
+    oss
       << "@SP" << nl
       << "A=M" << nl
-      << "M=D" << nl
-      << nl;
+      << "M=D" << " // *SP = D" << nl;
     return oss.str();
   };
 
   auto writeRamSPtoD = [=]() {
     std::ostringstream oss;
-    oss << "// D = *SP" << nl
+    oss 
       << "@SP" << nl
       << "A=M" << nl
-      << "D=M" << nl
-      << nl;
+      << "D=M" << "// D = *SP" << nl;
+ 
     return oss.str();
   };
 
@@ -298,19 +297,16 @@ void MemoryAccessProcessor::loadFunctions()
       // D = index
       << "@" << std::to_string(index) << nl
       << "D=A" << nl
-      << nl
 
       // D = RAM[segment + index] 
       << "@" << segment << nl
       << "A=D+M" << " // A = " << segment <<  " + " << index << nl
-      << "D=M" << " // D = RAM[" << segment << " + " << index << nl
-      << nl
+      << "D=M" << " // D = RAM[" << segment << " + " << index << "]" << nl
 
       // *SP = D
       << "@SP" << nl
       << "A=M" << nl
       << "M=D" << nl
-      << nl
 
       // SP++
       << "@SP" << nl
@@ -327,23 +323,19 @@ void MemoryAccessProcessor::loadFunctions()
       // D = index
       << "@" << std::to_string(index) << nl
       << "D=A" << nl
-      << nl
 
       // D = segment + index
       << "@" << segment << nl
       << "D=D+M" << " // D = " << segment << " + index" << nl
-      << nl
 
       // R13 = D (SP)
       << "@R13" << nl
       << "M=D" << " // R13 = D (SP)" << nl
-      << nl
 
-      << "// D = RAM[SP--]\n"
-      << "@SP\n" 
-      << "AM=M-1\n"
-      << "D=M\n"
-      << nl
+      << "// D = RAM[SP--]" << nl
+      << "@SP" << nl
+      << "AM=M-1" << nl
+      << "D=M" << nl
 
       // RAM[LCL + index] = *SP
       << "@R13" << nl
@@ -558,8 +550,7 @@ void BranchingProcessor::loadFunctions()
 
     std::ostringstream oss;
     oss << "// label " << m_code_writer.getCurrentSourceFileName() << "$" << arg << '\n'
-      << "(" << m_code_writer.getCurrentSourceFileName() << "$" << arg << ")" << '\n'
-      << '\n';
+      << "(" << m_code_writer.getCurrentSourceFileName() << "$" << arg << ")" << '\n';
     return oss.str();
   };
 
@@ -568,8 +559,7 @@ void BranchingProcessor::loadFunctions()
     std::ostringstream oss;
     oss << "// goto " << this->m_code_writer.getCurrentSourceFileName() << "$" << arg << '\n'
       << "@" << this->m_code_writer.getCurrentSourceFileName() << "$" << arg << '\n'
-      << "0;JMP" << '\n'
-      << '\n';
+      << "0;JMP" << '\n';
     return oss.str();
   };
 
@@ -614,56 +604,183 @@ void FunctionalProcessor::loadFunctions()
 
   MemoryAccessProcessor mcp{ m_code_writer };
   mcp.loadFunctions();
-  std::vector<std::string> tokens{ "push", "local","" };
+  std::vector<std::string> tokens{ "push", "","" };
   const char nl{ '\n' };
 
-  m_function["function"] = [=,&tokens, &mcp](const std::string& arg, const int n) mutable {
+  m_function["function"] = [=](const std::string& arg, const int n) mutable {
     std::ostringstream oss;
-    oss << "// function " /*<< m_code_writer.getCurrentSourceFileName() << "." */ << arg << '\n'
-      << "(" /*<< m_code_writer.getCurrentSourceFileName() << "."*/ << arg << ")" << '\n'
+    oss << "// function " << arg << nl
+      << "(" << arg << ")" << nl
       // *LCL = *SP
+      << "@SP" << nl
+      << "D=M" << nl
+      << "@LCL" << nl
+      << "M=D" << nl;
+
+    if (n) {
+      // push 0th locals and initialize to 0
+      oss << "D=0" << nl
+          << "// *(LCL + 0) = 0" << nl
+          << "@SP" << nl
+          << "A=M" << nl
+          << "M=D" << nl;
+
+      //push n-1 local variables and initialize to 0
+      for (int i = 1; i < n; i++) {
+        oss << "// push local " << i << " = 0" << nl
+          << "A=A+1" << nl
+          << "M=D" << nl;
+      }
+      // SP = top of the stack
+
+      oss << "// SP = top of the stack" << nl
+        << "A=A+1" << nl
+        << "D=A" << nl
+        << "@SP" << nl
+        << "M=D" << nl
+        << nl;
+    }
+      
+    return oss.str();
+  };
+
+  auto pushSegment = [=](const std::string& segment, const bool pushLabel = false) {
+    std::ostringstream oss;
+    oss << "// call : push " << segment << nl
+
+      // D = RAM[segment] 
+      << "@" << segment << nl
+      << (pushLabel ? "D=A" : "D=M") <<  nl
+
+      // *SP = D
+      << "@SP" << nl
+      << "A=M" << nl
+      << "M=D" << nl
+
+      // SP++
+      << "@SP" << nl
+      << "M=M+1" << nl
+      << nl;
+
+    return oss.str();
+  };
+
+  m_function["call"] = [=](const std::string& functionName, const int n) {
+    static size_t index{ 0 };
+    std::string retLabel{ m_code_writer.getCurrentSourceFileName() + "$ret." + std::to_string(index++) };
+    std::ostringstream oss;
+    oss << "// call " << functionName << '\n'
+      // push all segments and return address
+      << pushSegment(retLabel, true)
+      << pushSegment("LCL")
+      << pushSegment("ARG")
+      << pushSegment("THIS")
+      << pushSegment("THAT")
+
+      // LCL = SP
+      << "// set up LCL = SP" << nl
       << "@SP" << nl
       << "D=M" << nl
       << "@LCL" << nl
       << "M=D" << nl
 
-      // push 0th locals and initialize to 0
-      << "D=0" << nl
-      << "// *(LCL + 0) = 0" << nl
-      << "@SP" << nl
-      << "A=M" << nl
+      // ARG = LCL - 5 - nArgs
+      << "// set up ARG = LCL - 5 - nArgs" << nl
+      << "@" << n << nl
+      << "D=D-A" << nl
+      << "@5" << nl
+      << "D=D-A" << nl
+      << "@ARG" << nl
       << "M=D" << nl
+
+      // goto arg
+      << "// goto " << functionName << nl
+      << "@" << functionName << nl
+      << "0;JMP" << nl
+
+      // return address label
+      << "(" << retLabel << ")" << nl
       << nl;
-
-    //push n-1 local variables and initialize to 0
-    for (int i = 1; i < n; i++) {
-      oss << "// push local " << i << " = 0" << nl
-          << "A=A+1" << nl
-          << "M=D" << nl;
-    }
-    // SP = top of the stack
-    oss << "A=A+1" << nl
-      << "D=A" << nl
-      << "@SP" << nl
-      << "M=D" << nl
-      << nl;
-    return oss.str();
-  };
-
-  m_function["call"] = [=](const std::string& arg, const int n) {
-
-    std::ostringstream oss;
-    oss << "// call " << m_code_writer.getCurrentSourceFileName() << "." << arg << '\n'
-      << "(" << m_code_writer.getCurrentSourceFileName() << "$" << arg << ")" << '\n'
-      << '\n';
     return oss.str();
   };
 
   m_function["return"] = [=](const std::string& arg, const int n) {
 
     std::ostringstream oss;
-    oss << "// return " << m_code_writer.getCurrentSourceFileName() << "$" << arg << '\n'
-      << "(" << m_code_writer.getCurrentSourceFileName() << "$" << arg << ")" << '\n'
+    oss << "// return " << nl
+
+      // store LCL in R13
+      << "// store LCL in R13" << nl
+      << "@LCL" << nl
+      << "D=M" << nl
+      << "@R13" << nl
+      << "M=D" << nl 
+
+      // store return address (LCL - 5) in R14
+      << "// store return address (LCL - 5) in R14" << nl
+      << "@5" << nl
+      << "A=D-A" << nl
+      << "D=M" << nl
+      << "@R14" << nl
+      << "M=D" << nl // store LCL - 5 in R14
+
+      //Reposition return value in *(ARG + 0) = *(SP--)
+      <<"//Reposition return value in *(ARG + 0) = *(SP--)" << nl
+      << "@SP" << nl
+      << "A=M-1" << nl // pop SP--
+      << "D=M" << nl
+      << "@ARG" << nl
+      << "A=M" << nl
+      << "M=D" << nl
+
+      // SP = ARG + 1
+      << "// SP = ARG + 1" << nl
+      << "@ARG" << nl
+      << "D=M+1" << nl
+      << "@SP" << nl
+      << "M=D" << nl
+
+      // THAT = *(R13) - 1
+      << "// THAT = *(R13) - 1" << nl
+      << "@R13" << nl
+      << "D=M-1" << nl
+      << "AM=D" << nl
+      << "D=M" << nl
+      << "@THAT" << nl
+      << "M=D" << nl
+
+      //THIS = *(R13) - 2
+      << "//THIS = *(R13) - 2" << nl
+      << "@R13" << nl
+      << "D=M-1" << nl
+      << "AM=D" << nl
+      << "D=M" << nl
+      << "@THIS" << nl
+      << "M=D" << nl
+
+      //ARG = *(R13) - 3
+      << "//ARG = *(R13) - 3" << nl
+      << "@R13" << nl
+      << "D=M-1" << nl
+      << "AM=D" << nl
+      << "D=M" << nl
+      << "@ARG" << nl
+      << "M=D" << nl
+
+      //LCL = *(R13) - 4
+      << "//LCL = *(R13) - 4" << nl
+      << "@R13" << nl
+      << "D=M-1" << nl
+      << "AM=D" << nl
+      << "D=M" << nl
+      << "@LCL" << nl
+      << "M=D" << nl
+
+      // goto ret address
+      << "// goto ret address" << nl
+      << "@R14" << nl
+      << "A=M" << nl
+      << "0;JMP" << nl
       << '\n';
     return oss.str();
   };
