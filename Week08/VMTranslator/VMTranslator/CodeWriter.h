@@ -26,6 +26,7 @@ public:
   inline const bool isOutputFileOpen() const noexcept { return m_is_file_open; }
   inline void setCurrentSourceFile(const std::filesystem::path& fileNPath) noexcept { m_source_file_path = fileNPath; }
   inline void setDumpCommands(const bool value) noexcept { m_dump_commands = value; };
+  //inline void setOptimizationLevel(OptiLevel o) noexcept { m_optimization_level = o; }
 
   void writeInit();
   std::string writeArithmetic(const std::vector<std::string>& tokens);
@@ -57,6 +58,7 @@ private:
   const std::filesystem::path& m_output_file_path;
   bool m_is_file_open;
   bool m_dump_commands;
+  //OptiLevel m_optimization_level;
   static const CommandSets  ms_command_set;
 };
 
