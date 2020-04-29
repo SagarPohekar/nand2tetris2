@@ -1,6 +1,7 @@
 #include "JackTokenizer.h"
 #include "DebugUtils.hpp"
 #include <algorithm>
+#include <sstream>
 
 using namespace std::string_literals;
 
@@ -31,6 +32,14 @@ JackTokenizer::JackTokenizer(const std::filesystem::path& sourceFilePath)
     m_curr_token{ "" },
     m_token_type{ JackTokenizer::TokenType::Invalid }
 {
+#if JK_DEBUG
+  auto outputFilePath = sourceFilePath;
+  outputFilePath = outputFilePath.replace_extension(".xmltst");
+  m_output_file.open(outputFilePath);
+  if (m_output_file.is_open()) {
+    m_output_file << writeXMLTag("tokens","",true, false);
+  }
+#endif 
 }
 
 //-------------------------------------------------------------------------
@@ -41,6 +50,12 @@ JackTokenizer::~JackTokenizer() noexcept
   if (m_is_open) {
     m_source_file.close();
   }
+#if JK_DEBUG
+  if (m_output_file.is_open()) {
+    m_output_file << writeXMLTag("tokens", "", false, true);
+    m_output_file.close();
+  }
+#endif 
 }
 
 //-------------------------------------------------------------------------
@@ -91,12 +106,63 @@ void JackTokenizer::advance()
       }
       ch = m_source_file.get();
     }
-    token += ch;
+    if ('\"' == ch) {
+      token += ch;
+      ch = m_source_file.peek();
+      while ('\"' != ch) {
+        token += m_source_file.get();
+        ch = m_source_file.peek();
+      }
+      token += m_source_file.get();
+      m_source_file.get();
+      break;
+    }
+    else {
+      token += ch;
+    }
     ch = m_source_file.get();
     
   } while (m_source_file.good() && !m_source_file.eof() && !is_symbol(ch) && !is_symbol(token[0]) && !is_keyword(token) && !std::isblank(ch));
   m_source_file.unget();
   compute_token_type(token);
+
+#if JK_DEBUG
+  if (m_output_file.is_open()) {
+    switch (m_token_type) {
+    case JackTokenizer::TokenType::Keyword:
+      m_output_file << writeXMLTag("keyword", m_curr_token);
+      break;
+    case JackTokenizer::TokenType::Symbol:
+      if (m_curr_token == "<") {
+        m_output_file << writeXMLTag("symbol", "&lt;");
+      }
+      else if (m_curr_token == ">") {
+        m_output_file << writeXMLTag("symbol", "&gt;");
+      }
+      else if (m_curr_token == "&") {
+        m_output_file << writeXMLTag("symbol", "&amp;");
+      }
+      else {
+        m_output_file << writeXMLTag("symbol", m_curr_token);
+      }
+      
+      break;
+    case JackTokenizer::TokenType::IntegerConstant:
+      m_output_file << writeXMLTag("integerConstant", m_curr_token);
+      break;
+    case JackTokenizer::TokenType::StringConstant:
+      m_output_file << writeXMLTag("stringConstant", m_curr_token);
+      break;
+    case JackTokenizer::TokenType::Identifier:
+      m_output_file << writeXMLTag("identifier", m_curr_token);
+      break;
+    case JackTokenizer::TokenType::Invalid:
+    default:
+      break;
+    }
+  }
+#endif 
+  
 }
 
 //-------------------------------------------------------------------------
@@ -146,6 +212,7 @@ void JackTokenizer::compute_token_type(const std::string& token)
   }
   else if ('\"' == token[0] && '\"' == token[token.size() - 1ull]) {
     m_token_type = JackTokenizer::TokenType::StringConstant;
+    m_curr_token = m_curr_token.substr(1, m_curr_token.size() - 2ull);
   }
   else if (m_source_file.good()) {
     m_token_type = JackTokenizer::TokenType::Identifier;
@@ -156,6 +223,23 @@ void JackTokenizer::compute_token_type(const std::string& token)
   }
   
 }
+#if JK_DEBUG
+std::string JackTokenizer::writeXMLTag(std::string_view tag, std::string_view val, bool opening, bool closing)
+{
+  std::ostringstream oss;
+  if (opening) {
+    oss << "<" << tag << '>';
+  }
+  if (val.size()) {
+    oss << ' ' << val << ' ';
+  }
+  if (closing) {
+    oss << "</" << tag << '>';
+  }
+  oss << '\n';
+  return oss.str();
+}
+#endif
 
 std::ostream& operator<<(std::ostream& os, JackTokenizer::TokenType tk)
 {

@@ -1,6 +1,7 @@
 #pragma once
 #ifndef __JACKTOKENIZER_H__
 #define __JACKTOKENIZER_H__
+#define JK_DEBUG 1
 
 #include <iostream>
 #include <string>
@@ -41,14 +42,18 @@ private:
   bool is_keyword(const std::string& token) const noexcept;
   bool is_symbol(char s) const noexcept;
   void compute_token_type(const std::string& token);
-
+#if JK_DEBUG
+  std::string writeXMLTag(std::string_view tag, std::string_view val, bool opening = true, bool closing = true);
+#endif
 private:
   std::ifstream m_source_file;
   bool m_is_open;
   const std::filesystem::path& m_source_file_path;
   std::string m_curr_token;
   TokenType m_token_type;
-
+#if JK_DEBUG
+  std::ofstream m_output_file;
+#endif
 private:
   static const std::unordered_set<std::string> ms_keywords;
   static const std::unordered_set<char> ms_symbols;
@@ -56,5 +61,5 @@ private:
 
 std::ostream& operator<<(std::ostream& os, JackTokenizer::TokenType);
 
-#endif // !__JACKTOKENIZER_H__
+#endif
 
