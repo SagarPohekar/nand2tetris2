@@ -37,7 +37,7 @@ JackTokenizer::JackTokenizer(const std::filesystem::path& sourceFilePath)
   outputFilePath = outputFilePath.replace_extension(".xmltst");
   m_output_file.open(outputFilePath);
   if (m_output_file.is_open()) {
-    m_output_file << writeXMLTag("tokens","",true, false);
+    m_output_file << createXMLTag("tokens","",true, false);
   }
 #endif 
 }
@@ -52,7 +52,7 @@ JackTokenizer::~JackTokenizer() noexcept
   }
 #if JK_DEBUG
   if (m_output_file.is_open()) {
-    m_output_file << writeXMLTag("tokens", "", false, true);
+    m_output_file << createXMLTag("tokens", "", false, true);
     m_output_file.close();
   }
 #endif 
@@ -224,9 +224,37 @@ void JackTokenizer::advance2()
 //-------------------------------------------------------------------------
 // JackTokenizer :: getCurrentToken
 //-------------------------------------------------------------------------
-std::tuple<std::string, JackTokenizer::TokenType> JackTokenizer::getCurrentToken()
+std::pair<std::string, JackTokenizer::TokenType> JackTokenizer::getCurrentToken()
 {
   return { m_curr_token, m_token_type };
+}
+
+JackTokenizer::KeywordSubtype JackTokenizer::getKeywordSubtype()
+{
+  if (m_token_type == JackTokenizer::TokenType::Keyword) {
+    if (m_curr_token == "class"         ) return JackTokenizer::KeywordSubtype::CLASS;
+    if (m_curr_token == "constructor"   ) return JackTokenizer::KeywordSubtype::CONSTRUCTOR;
+    if (m_curr_token == "function"      ) return JackTokenizer::KeywordSubtype::FUNCTION;
+    if (m_curr_token == "method"        ) return JackTokenizer::KeywordSubtype::METHOD;
+    if (m_curr_token == "field"         ) return JackTokenizer::KeywordSubtype::FIELD;
+    if (m_curr_token == "static"        ) return JackTokenizer::KeywordSubtype::STATIC;
+    if (m_curr_token == "var"           ) return JackTokenizer::KeywordSubtype::VAR;
+    if (m_curr_token == "int"           ) return JackTokenizer::KeywordSubtype::INT;
+    if (m_curr_token == "char"          ) return JackTokenizer::KeywordSubtype::CHAR;
+    if (m_curr_token == "boolean"       ) return JackTokenizer::KeywordSubtype::BOOLEAN;
+    if (m_curr_token == "void"          ) return JackTokenizer::KeywordSubtype::VOID;
+    if (m_curr_token == "true"          ) return JackTokenizer::KeywordSubtype::TRUE;
+    if (m_curr_token == "false"         ) return JackTokenizer::KeywordSubtype::FALSE;
+    if (m_curr_token == "null"          ) return JackTokenizer::KeywordSubtype::kNULL;
+    if (m_curr_token == "this"          ) return JackTokenizer::KeywordSubtype::THIS;
+    if (m_curr_token == "let"           ) return JackTokenizer::KeywordSubtype::LET;
+    if (m_curr_token == "do"            ) return JackTokenizer::KeywordSubtype::DO;
+    if (m_curr_token == "if"            ) return JackTokenizer::KeywordSubtype::IF;
+    if (m_curr_token == "else"          ) return JackTokenizer::KeywordSubtype::ELSE;
+    if (m_curr_token == "while"         ) return JackTokenizer::KeywordSubtype::WHILE;
+    if (m_curr_token == "return"        ) return JackTokenizer::KeywordSubtype::RETURN;
+  }
+  return JackTokenizer::KeywordSubtype::Invalid;
 }
 
 //-------------------------------------------------------------------------
@@ -289,30 +317,30 @@ void JackTokenizer::writeCurrentTokenToXML()
   if (m_output_file.is_open()) {
     switch (m_token_type) {
     case JackTokenizer::TokenType::Keyword:
-      m_output_file << writeXMLTag("keyword", m_curr_token);
+      m_output_file << createXMLTag("keyword", m_curr_token);
       break;
     case JackTokenizer::TokenType::Symbol:
       if (m_curr_token == "<") {
-        m_output_file << writeXMLTag("symbol", "&lt;");
+        m_output_file << createXMLTag("symbol", "&lt;");
       }
       else if (m_curr_token == ">") {
-        m_output_file << writeXMLTag("symbol", "&gt;");
+        m_output_file << createXMLTag("symbol", "&gt;");
       }
       else if (m_curr_token == "&") {
-        m_output_file << writeXMLTag("symbol", "&amp;");
+        m_output_file << createXMLTag("symbol", "&amp;");
       }
       else {
-        m_output_file << writeXMLTag("symbol", m_curr_token);
+        m_output_file << createXMLTag("symbol", m_curr_token);
       }
       break;
     case JackTokenizer::TokenType::IntegerConstant:
-      m_output_file << writeXMLTag("integerConstant", m_curr_token);
+      m_output_file << createXMLTag("integerConstant", m_curr_token);
       break;
     case JackTokenizer::TokenType::StringConstant:
-      m_output_file << writeXMLTag("stringConstant", m_curr_token);
+      m_output_file << createXMLTag("stringConstant", m_curr_token);
       break;
     case JackTokenizer::TokenType::Identifier:
-      m_output_file << writeXMLTag("identifier", m_curr_token);
+      m_output_file << createXMLTag("identifier", m_curr_token);
       break;
     case JackTokenizer::TokenType::Invalid:
     default:
@@ -322,9 +350,9 @@ void JackTokenizer::writeCurrentTokenToXML()
 }
 
 //-------------------------------------------------------------------------
-// JackTokenizer :: writeXMLTag
+// JackTokenizer :: createXMLTag
 //-------------------------------------------------------------------------
-std::string JackTokenizer::writeXMLTag(std::string_view tag, std::string_view val, bool opening, bool closing)
+std::string JackTokenizer::createXMLTag(std::string_view tag, std::string_view val, bool opening, bool closing)
 {
   std::ostringstream oss;
   if (opening) {
@@ -349,19 +377,19 @@ std::ostream& operator<<(std::ostream& os, JackTokenizer::TokenType tk)
     os << "Invalid";
     break;
   case JackTokenizer::TokenType::Keyword:
-    os << "Keyword";
+    os << "keyword";
     break;
   case JackTokenizer::TokenType::Symbol:
-    os << "Symbol";
+    os << "symbol";
     break;
   case JackTokenizer::TokenType::IntegerConstant:
-    os << "IntegerConstant";
+    os << "integerConstant";
     break;
   case JackTokenizer::TokenType::StringConstant:
-    os << "StringConstant";
+    os << "stringConstant";
     break;
   case JackTokenizer::TokenType::Identifier:
-    os << "Identifier";
+    os << "identifier";
     break;
   default:
     break;

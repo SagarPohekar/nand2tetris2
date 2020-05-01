@@ -3,3 +3,5 @@ tools/
 *.exe
 out/
 .vs/
+*.xmltst
+*.xmlt

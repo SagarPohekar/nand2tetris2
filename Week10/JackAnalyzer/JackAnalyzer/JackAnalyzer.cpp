@@ -53,14 +53,15 @@ int main(int argc, char* argv[])
 	for (const auto& sourceFilePath : sourceFilePaths) {
 		fs::path sourceFileFullPath{ getSourceFileFullPath(sourceFilePath) };
 		Debug::Log(sourceFileFullPath);
-		JackTokenizer jk{ sourceFileFullPath };
+		/*JackTokenizer jk{ sourceFileFullPath };
 		while (jk.hasMoreTokens()) {
 			jk.advance2();
 			const auto& [token, tokentype] = jk.getCurrentToken();
 			if (!token.empty() && JackTokenizer::TokenType::Invalid != tokentype) {
 				std::clog << std::setw(15) << std::left << token << tokentype << '\n';
 			}
-		}
+		}*/
+		CompilationEngine ce{ sourceFileFullPath };
 	}
 	
 

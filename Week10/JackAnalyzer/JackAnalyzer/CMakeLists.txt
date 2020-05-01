@@ -7,7 +7,7 @@ cmake_minimum_required (VERSION 3.8)
 add_executable (JackAnalyzer "JackAnalyzer.cpp" "JackAnalyzer.h"
                              "JackTokenizer.h" "JackTokenizer.cpp"
                              "CompilationEngine.h" "CompilationEngine.cpp"
-                             "DebugUtils.hpp")
+                             "DebugUtils.hpp" "XMLWriter.h" "XMLWriter.cpp")
 
 # TODO: Add tests and install targets if needed.
 # Set CPP Standard

@@ -8,10 +8,16 @@
 #include <filesystem>
 #include <unordered_set>
 #include <tuple>
+#include <map>
+#include <queue>
 #include "JackTokenizer.h"
+#include "XMLWriter.h"
 
 class CompilationEngine
 {
+public:
+  using pair_t = std::pair<std::string, JackTokenizer::TokenType>;
+
 public:
   explicit CompilationEngine(const std::filesystem::path& sourceFilePath);
   ~CompilationEngine() noexcept;
@@ -25,7 +31,7 @@ public:
   /**
   * Compiles static or field declarations
   */
-  void compileClassVarDesc();
+  void compileClassVarDec();
 
   /**
   * Compiles complete method, function or constructor
@@ -41,7 +47,7 @@ public:
   /**
   * Compiles var declaration
   */
-  void compileVarDesc();
+  void compileVarDec();
 
   /**
   * Compiles sequence of statements , not
@@ -89,7 +95,9 @@ public:
   */
   void compileExpressionList();
 
+  std::queue<pair_t>& getNextToken();
 
+  [[nodiscard]] const std::filesystem::path getSourceFilePath() const noexcept { return m_source_file_path; }
 private:
 
 private:
@@ -97,8 +105,11 @@ private:
   std::filesystem::path m_output_file_path;
   std::ofstream m_output_file;
   JackTokenizer m_jack_tokenizer;
+  XMLWriter m_xml_writer;
+  std::queue<pair_t> m_token_q;
+  using Method = void (CompilationEngine::*)();
+  std::map<JackTokenizer::KeywordSubtype, Method> m_methods;
+  void InitalizeMethodMap();
 };
 
 #endif // !__COMPILATIONENGINE_H__
-
-
