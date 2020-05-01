@@ -36,6 +36,7 @@ public:
   [[nodiscard]] inline const bool hasMoreTokens() const noexcept { return m_source_file.good(); }
   [[nodiscard]] inline const TokenType tokenType() const noexcept { return m_token_type; }
   void advance();
+  void advance2();
   std::tuple<std::string, TokenType> getCurrentToken();
 
 private:
@@ -44,6 +45,7 @@ private:
   void compute_token_type(const std::string& token);
 #if JK_DEBUG
   std::string writeXMLTag(std::string_view tag, std::string_view val, bool opening = true, bool closing = true);
+  void writeCurrentTokenToXML();
 #endif
 private:
   std::ifstream m_source_file;

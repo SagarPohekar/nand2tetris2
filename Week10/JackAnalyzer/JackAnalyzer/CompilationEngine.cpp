@@ -1,5 +1,5 @@
 #include "CompilationEngine.h"
-
+#include <queue>
 
 CompilationEngine::CompilationEngine(const std::filesystem::path& sourceFilePath)
   : m_source_file_path{ sourceFilePath },
@@ -30,7 +30,19 @@ void CompilationEngine::compileClass()
   * subroutineName	: identifier
   * varName         : identifier
   */
+  using tuple_t = std::tuple<std::string, JackTokenizer::TokenType>;
+  std::queue<tuple_t> q;
 
+  while (m_jack_tokenizer.hasMoreTokens()) {
+
+    m_jack_tokenizer.advance();
+    q.emplace(m_jack_tokenizer.getCurrentToken());
+    const auto& [token, tokentype] = m_jack_tokenizer.getCurrentToken();
+    if (!token.empty() && JackTokenizer::TokenType::Invalid != tokentype) {
+      std::clog << std::setw(15) << std::left << token << tokentype << '\n';
+
+    }
+  }
 }
 
 void CompilationEngine::compileClassVarDesc()

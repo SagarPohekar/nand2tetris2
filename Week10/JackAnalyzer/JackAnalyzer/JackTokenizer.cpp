@@ -127,42 +127,98 @@ void JackTokenizer::advance()
   compute_token_type(token);
 
 #if JK_DEBUG
-  if (m_output_file.is_open()) {
-    switch (m_token_type) {
-    case JackTokenizer::TokenType::Keyword:
-      m_output_file << writeXMLTag("keyword", m_curr_token);
-      break;
-    case JackTokenizer::TokenType::Symbol:
-      if (m_curr_token == "<") {
-        m_output_file << writeXMLTag("symbol", "&lt;");
+  writeCurrentTokenToXML();
+#endif
+}
+
+//-------------------------------------------------------------------------
+// JackTokenizer :: advance2
+//-------------------------------------------------------------------------
+#include <iterator>
+void JackTokenizer::advance2()
+{
+  if (!m_is_open) {
+    Debug::Error("Unable to open file"s + m_source_file_path.string());
+    return;
+  }
+
+  auto skipUpToChar = [=](std::ifstream& is, char ch) {
+    while (ch != is.get()) {  }
+  };
+
+  auto addCharsToTokenUntilChar = [=](std::ifstream& is, auto& token, char ch) {
+    token += ch;
+    do {
+      token += is.get();
+    } while (ch != is.peek());
+    token += ch;
+    is.get();
+    is.get();
+  };
+
+  auto skipUpToMultiCommentEnd = [=](std::ifstream& is, char prevChar, char nextChar) {
+
+    char prev{ prevChar };
+    char next{ nextChar };
+
+    while (is.good() && !('*' == prev && '/' == next)) {
+      prev = is.get();
+      next = is.peek();
+    }
+    is.get(); // match '/'
+  };
+
+  std::string token{ "" };
+ 
+  char curCh{ static_cast<char>(m_source_file.get()) };
+  do
+  {
+    while (m_source_file.good()) {
+      const char nxtCh = m_source_file.peek();
+
+      if ('/' == curCh && '/' == nxtCh) { // skip inline comments
+        skipUpToChar(m_source_file, '\n');
       }
-      else if (m_curr_token == ">") {
-        m_output_file << writeXMLTag("symbol", "&gt;");
+      else if ('/' == curCh && '*' == nxtCh) { // skip multiline comments
+        skipUpToMultiCommentEnd(m_source_file, '/', '*');
       }
-      else if (m_curr_token == "&") {
-        m_output_file << writeXMLTag("symbol", "&amp;");
-      }
+      else if ('\n' == curCh || std::isblank(curCh)) {
+        //curCh = m_source_file.get();
+      } // skip newline
       else {
-        m_output_file << writeXMLTag("symbol", m_curr_token);
+        break;
       }
-      
-      break;
-    case JackTokenizer::TokenType::IntegerConstant:
-      m_output_file << writeXMLTag("integerConstant", m_curr_token);
-      break;
-    case JackTokenizer::TokenType::StringConstant:
-      m_output_file << writeXMLTag("stringConstant", m_curr_token);
-      break;
-    case JackTokenizer::TokenType::Identifier:
-      m_output_file << writeXMLTag("identifier", m_curr_token);
-      break;
-    case JackTokenizer::TokenType::Invalid:
-    default:
+      curCh = m_source_file.get();
+    }
+
+    if ('\"' == curCh) { // process string constant
+      addCharsToTokenUntilChar(m_source_file, token, '\"');
       break;
     }
-  }
-#endif 
+    else if (is_keyword(token)) { // keyword
+      if (!is_symbol(curCh)) {
+        token += curCh;
+        curCh = m_source_file.get();
+        continue;
+      }
+      break;
+    }
+    else if (is_symbol(token[0])) { // symbol
+      break;
+    }
+    else {
+      token += curCh;
+    }
+    curCh = m_source_file.get();
+  } while (m_source_file.good() && !is_symbol(curCh) && !std::isblank(curCh));
+  m_source_file.unget();
   
+  compute_token_type(token);
+
+#if JK_DEBUG
+  writeCurrentTokenToXML();
+#endif
+
 }
 
 //-------------------------------------------------------------------------
@@ -223,7 +279,51 @@ void JackTokenizer::compute_token_type(const std::string& token)
   }
   
 }
+
 #if JK_DEBUG
+//-------------------------------------------------------------------------
+// JackTokenizer :: writeCurrentTokenToXML
+//-------------------------------------------------------------------------
+void JackTokenizer::writeCurrentTokenToXML()
+{
+  if (m_output_file.is_open()) {
+    switch (m_token_type) {
+    case JackTokenizer::TokenType::Keyword:
+      m_output_file << writeXMLTag("keyword", m_curr_token);
+      break;
+    case JackTokenizer::TokenType::Symbol:
+      if (m_curr_token == "<") {
+        m_output_file << writeXMLTag("symbol", "&lt;");
+      }
+      else if (m_curr_token == ">") {
+        m_output_file << writeXMLTag("symbol", "&gt;");
+      }
+      else if (m_curr_token == "&") {
+        m_output_file << writeXMLTag("symbol", "&amp;");
+      }
+      else {
+        m_output_file << writeXMLTag("symbol", m_curr_token);
+      }
+      break;
+    case JackTokenizer::TokenType::IntegerConstant:
+      m_output_file << writeXMLTag("integerConstant", m_curr_token);
+      break;
+    case JackTokenizer::TokenType::StringConstant:
+      m_output_file << writeXMLTag("stringConstant", m_curr_token);
+      break;
+    case JackTokenizer::TokenType::Identifier:
+      m_output_file << writeXMLTag("identifier", m_curr_token);
+      break;
+    case JackTokenizer::TokenType::Invalid:
+    default:
+      break;
+    }
+  }
+}
+
+//-------------------------------------------------------------------------
+// JackTokenizer :: writeXMLTag
+//-------------------------------------------------------------------------
 std::string JackTokenizer::writeXMLTag(std::string_view tag, std::string_view val, bool opening, bool closing)
 {
   std::ostringstream oss;
