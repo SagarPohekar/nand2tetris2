@@ -50,6 +50,9 @@ CompilationEngine::CompilationEngine(const std::filesystem::path& sourceFilePath
 
 CompilationEngine::~CompilationEngine() noexcept
 {
+  if (m_output_file.is_open()) {
+    m_output_file.close();
+  }
 }
 
 std::queue<CompilationEngine::pair_t>& CompilationEngine::getNextToken()
@@ -75,6 +78,11 @@ bool CompilationEngine::writeToken(bool res, const char* msg)
     return false;
   }
   m_xml_writer.setIndentation(Indent::Increase);
+  if (tokentype.second == TokenType::Symbol && is_in(tokentype.first, "<"s, ">"s, "&"s)) {
+    if (tokentype.first == "<"s) tokentype.first = "&lt;";
+    if (tokentype.first == ">"s) tokentype.first = "&gt;";
+    if (tokentype.first == "&"s) tokentype.first = "&amp;";
+  }
   m_xml_writer.writeTag(typeToString(tokentype.second), tokentype.first, Indent::NoChange);
   m_xml_writer.setIndentation(Indent::Decrease);
   m_token_q.pop();
@@ -121,36 +129,17 @@ void CompilationEngine::compileClass()
    
   };
 
-  pair_t tokentype = fetchToken(this);
-
-  // write <class>
   m_xml_writer.writeOpeningTag("class");
-  if ( !writeToken( tokentype.second == TokenType::Keyword, "class") ) return;
 
-  // className
-  tokentype = fetchToken(this);
-  if ( !writeToken( is_valid(tokentype) &&
-                    tokentype.second == TokenType::Identifier,
-                    "className") ) return;
-
-  // '{'
-  tokentype = fetchToken(this);
-  if ( !writeToken( is_valid(tokentype) &&
-                    tokentype.second == TokenType::Symbol && 
-                    tokentype.first == "{"s,
-                    "{") ) return;
-
+  pair_t tokentype = fetchToken(this);
+  if (!compileKeyword("class"s)) return;
+  if (!compileIdentifier("className"s)) return;
+  
+  if (!compileSymbol("{"s)) return;
   compileClassVarDec();
   compileSubroutine();
+  if (!compileSymbol("}"s)) return;
 
-  // '}'
-  tokentype = fetchToken(this);
-  if ( !writeToken( is_valid(tokentype) &&
-                    tokentype.second == TokenType::Symbol &&
-                    tokentype.first == "}"s, 
-                    "}") ) return;
-
-  // write </class>
   m_xml_writer.writeClosingTag("class");
 }
 
@@ -165,53 +154,28 @@ void CompilationEngine::compileClassVarDec()
   pair_t tokentype = fetchToken(this);
 
   while (is_valid(tokentype) && is_in(tokentype.first, Tk::STATIC, Tk::FIELD)) {
-    // <classVarDec>
-    m_xml_writer.setIndentation(1);
+    
+    m_xml_writer.setIndentation(Indent::Increase);
     m_xml_writer.writeOpeningTag("classVarDec", Indent::NoChange);
     if ( !writeToken( is_valid(tokentype) &&
                       tokentype.second == TokenType::Keyword &&
                       is_in(tokentype.first, "static"s, "field"s),
                       "static | field") ) return;
 
-    // type
-    tokentype = fetchToken(this);
-    if ( !writeToken( is_valid(tokentype) &&
-                      is_in(tokentype.second, TokenType::Keyword, TokenType::Identifier),
-                      "type") ) return;
-
-    // varName
-    tokentype = fetchToken(this);
-    if ( !writeToken( is_valid(tokentype) &&
-                      tokentype.second == TokenType::Identifier,
-                      "varName") ) return;
+    if (!compileType("type"s)) return;
+    if (!compileIdentifier("varName"s)) return;
 
     tokentype = fetchToken(this);
     while (is_valid(tokentype) && tokentype.first == ",") {
-      // ','
-      if ( !writeToken( is_valid(tokentype) &&
-                        tokentype.second == TokenType::Symbol &&
-                        tokentype.first == ","s,
-                        ",") ) return;
-
-      // varName
-      tokentype = fetchToken(this);
-      if ( !writeToken( is_valid(tokentype) &&
-                        tokentype.second == TokenType::Identifier,
-                        "varName") ) return;
-
+      if (!compileSymbol(","s)) return;
+      if (!compileIdentifier("varName"s)) return;
       tokentype = fetchToken(this);
     }
 
-    // ';'
-    tokentype = fetchToken(this);
-    if ( !writeToken( is_valid(tokentype) &&
-                      tokentype.second == TokenType::Symbol && 
-                      tokentype.first == ";"s,
-                      ";") ) return;
+    if (!compileSymbol(";"s)) return;
 
-    // </classVarDec>
-    m_xml_writer.setIndentation(1);
     m_xml_writer.writeClosingTag("classVarDec", Indent::NoChange);
+    m_xml_writer.setIndentation(Indent::Decrease);
 
     tokentype = fetchToken(this);
   }
@@ -236,7 +200,7 @@ void CompilationEngine::compileSubroutine()
 
   if (is_valid(tokentype) && is_in(tokentype.first, Tk::CONSTRUCTOR, Tk::FUNCTION, Tk::METHOD)) {
     while (is_valid(tokentype) && is_in(tokentype.first, Tk::CONSTRUCTOR, Tk::FUNCTION, Tk::METHOD)) {
-      m_xml_writer.setIndentation(1);
+      m_xml_writer.setIndentation(Indent::Increase);
       m_xml_writer.writeOpeningTag("subroutineDec", Indent::NoChange);
 
       // constructor | function | method
@@ -246,60 +210,29 @@ void CompilationEngine::compileSubroutine()
                         is_in(tokentype.first, "constructor"s, "function"s, "method"s),
                         "constructor | function | method") ) return;
 
-      // type
-      tokentype = fetchToken(this);
-      if ( !writeToken( is_valid(tokentype) &&
-                        is_in(tokentype.second, TokenType::Keyword, TokenType::Identifier),
-                        "type") ) return;
-
-      // soubroutineName
-      tokentype = fetchToken(this);
-      if ( !writeToken( is_valid(tokentype) &&
-                        tokentype.second == TokenType::Identifier,
-                        "soubroutineName") ) return;
-
-      // '('
-      tokentype = fetchToken(this);
-      if ( !writeToken( is_valid(tokentype) &&
-                        tokentype.second == TokenType::Symbol &&
-                        tokentype.first == "("s,
-                        "(") ) return;
-
-      compileParameterList(); // parameterList	  : ((type varName) (',' type varName)*)?
-
-      // ')'
-      tokentype = fetchToken(this);
-      if ( !writeToken( is_valid(tokentype) &&
-                        tokentype.second == TokenType::Symbol &&
-                        tokentype.first == ")"s,
-                        ")") ) return;
+      // type soubroutineName '(' (parameterList) ')
+      if (!compileType("type"s)) return;
+      if (!compileIdentifier("soubroutineName"s)) return;
+      if (!compileSymbol("("s)) return;
+      compileParameterList();
+      if (!compileSymbol(")"s)) return;
 
       // subroutineBody	: '{' varDec* statements '}'
-      m_xml_writer.setIndentation(2);
+      m_xml_writer.setIndentation(Indent::Increase);
       m_xml_writer.writeOpeningTag("subroutineBody", Indent::NoChange);
 
-      // '{'
-      tokentype = fetchToken(this);
-      if ( !writeToken( is_valid(tokentype) &&
-                        tokentype.second == TokenType::Symbol &&
-                        tokentype.first == "{"s,
-                        "{") ) return;
-
+      if (!compileSymbol("{"s)) return;
       compileVarDec();
       compileStatements();
+      if (!compileSymbol("}"s)) return;
 
-      // '}'
-      tokentype = fetchToken(this);
-      if ( !writeToken( is_valid(tokentype) &&
-                        tokentype.second == TokenType::Symbol &&
-                        tokentype.first == "}"s,
-                        "}") ) return;
-
-      m_xml_writer.setIndentation(2);
       m_xml_writer.writeClosingTag("subroutineBody", Indent::NoChange);
+      m_xml_writer.setIndentation(Indent::Decrease);
 
-      m_xml_writer.setIndentation(1);
       m_xml_writer.writeClosingTag("subroutineDec", Indent::NoChange);
+      m_xml_writer.setIndentation(Indent::Decrease);
+
+      tokentype = fetchToken(this);
     }
   }
   
@@ -318,49 +251,26 @@ void CompilationEngine::compileParameterList()
 
   pair_t tokentype = fetchToken(this);
 
-  m_xml_writer.setIndentation(3);
+  m_xml_writer.setIndentation(Indent::Increase);
   m_xml_writer.writeOpeningTag("parameterList", Indent::NoChange);
 
   if (is_valid(tokentype) && !(tokentype.first == ")")) {
 
-    // type
-    tokentype = fetchToken(this);
-    if ( !writeToken( is_valid(tokentype) &&
-                      is_in(tokentype.second, TokenType::Keyword, TokenType::Identifier),
-                      "type") ) return;
+    if (!compileType("type"s)) return;
+    if (!compileIdentifier("varName"s)) return;
 
-    // varName
-    tokentype = fetchToken(this);
-    if ( !writeToken( is_valid(tokentype) &&
-                      tokentype.second == TokenType::Identifier,
-                      "varName") ) return;
-
+    // continue for the rest of the parameters
     tokentype = fetchToken(this);
     while (is_valid(tokentype) && tokentype.first == ",") {
-      // ','
-      tokentype = fetchToken(this);
-      if ( !writeToken( is_valid(tokentype) &&
-                        tokentype.second == TokenType::Symbol &&
-                        tokentype.first ==  ","s,
-                        ",") ) return;
-
-      // type
-      tokentype = fetchToken(this);
-      if ( !writeToken( is_valid(tokentype) &&
-                        is_in(tokentype.second, TokenType::Keyword, TokenType::Identifier),
-                        "type") ) return;
-
-      // varName
-      tokentype = fetchToken(this);
-      if ( !writeToken( is_valid(tokentype) &&
-                        tokentype.second == TokenType::Identifier,
-                        "varName") ) return;
-
+      if (!compileSymbol(","s)) return;
+      if (!compileType("type"s)) return;
+      if (!compileIdentifier("varName"s)) return;
       tokentype = fetchToken(this);
     }
-  } // End if (!(tokentype.first == ")")) {
-  m_xml_writer.setIndentation(3);
+  }
+  
   m_xml_writer.writeClosingTag("parameterList", Indent::NoChange);
+  m_xml_writer.setIndentation(Indent::Decrease);
 }
 
 void CompilationEngine::compileVarDec()
@@ -376,63 +286,26 @@ void CompilationEngine::compileVarDec()
 
   if (is_valid(tokentype) && tokentype.first == "var"s) {
 
-    m_xml_writer.setIndentation(3);
+    m_xml_writer.setIndentation(Indent::Increase);
     m_xml_writer.writeOpeningTag("varDec", Indent::NoChange);
 
-    // var keyword
-    tokentype = fetchToken(this);
-    if ( !writeToken( is_valid(tokentype) &&
-                      tokentype.second == TokenType::Keyword && 
-                      tokentype.first == "var"s,
-                      "var") ) return;
+    if (!compileKeyword("var"s)) return;
+    if (!compileType("type"s)) return;
+    if (!compileIdentifier("varName"s)) return;
 
-    // type
-    tokentype = fetchToken(this);
-    if ( !writeToken( is_valid(tokentype) &&
-                      is_in(tokentype.second, TokenType::Keyword, TokenType::Identifier),
-                      "type") ) return;
-
-    // varName
-    tokentype = fetchToken(this);
-    if ( !writeToken( is_valid(tokentype) &&
-                      tokentype.second == TokenType::Identifier,
-                      "varName") ) return;
-
+    // continue for the rest of the variables
     tokentype = fetchToken(this);
     while (is_valid(tokentype) && tokentype.first == ",") {
-
-      // ','
-      tokentype = fetchToken(this);
-      if ( !writeToken( is_valid(tokentype) &&
-                        tokentype.second == TokenType::Symbol &&
-                        tokentype.first == ","s,
-                        ",") ) return;
-
-      // type
-      tokentype = fetchToken(this);
-      if ( !writeToken( is_valid(tokentype) &&
-                        is_in(tokentype.second, TokenType::Keyword, TokenType::Identifier),
-                        "type") ) return;
-
-      // varName
-      tokentype = fetchToken(this);
-      if ( !writeToken( is_valid(tokentype) &&
-                        tokentype.second == TokenType::Identifier,
-                        "varName") ) return;
-
+      if (!compileSymbol(","s)) return;
+      if (!compileIdentifier("varName"s)) return;
       tokentype = fetchToken(this);
     }
 
-    // ';'
-    tokentype = fetchToken(this);
-    if ( !writeToken( is_valid(tokentype) &&
-                      tokentype.second == TokenType::Symbol &&
-                      tokentype.first == ";"s,
-                      ";") ) return;
+    if (!compileSymbol(";"s)) return;
 
-    m_xml_writer.setIndentation(3);
     m_xml_writer.writeClosingTag("varDec", Indent::NoChange);
-  } // if (is_valid(tokentype) && tokentype.first == "var"s)
+    m_xml_writer.setIndentation(Indent::Decrease);
+  }
 
   // Recursively complie susequent varDec
   tokentype = fetchToken(this);
@@ -459,6 +332,9 @@ void CompilationEngine::compileStatements()
   std::stack<std::string> brackets{};
   brackets.emplace("{");
 
+  m_xml_writer.setIndentation(Indent::Increase);
+  m_xml_writer.writeOpeningTag("statements", Indent::NoChange);
+
   while (!brackets.empty()) { // unless last '{' not found try to compile statements
 
     if (is_in(tokentype.first, "{"s, "}"s)) {
@@ -476,14 +352,15 @@ void CompilationEngine::compileStatements()
         (this->*method)();
       }
     }
-    else {
+    /*else {
       std::cerr << "ill-formed code, token: " << tokentype.first << " is not a statement." << '\n';
       break;
-    }
+    }*/
     //m_token_q.pop();
     tokentype = fetchToken(this);
   }
-
+  m_xml_writer.writeClosingTag("statements", Indent::NoChange);
+  m_xml_writer.setIndentation(Indent::Decrease);
 }
 
 void CompilationEngine::compileDo()
@@ -498,80 +375,31 @@ void CompilationEngine::compileDo()
   m_xml_writer.writeOpeningTag("doStatement", Indent::NoChange);
 
   pair_t tokentype = fetchToken(this);
-
-  // do keyword
-  if ( !writeToken( is_valid(tokentype) &&
-                    tokentype.second == TokenType::Keyword &&
-                    tokentype.first == "do"s,
-                    "do")) return;
+  if (!compileKeyword("do"s)) return;
 
   // subroutineCall
-  // subroutineName | (className | varName)
-  tokentype = fetchToken(this);
-  if ( !writeToken( is_valid(tokentype) &&
-                    tokentype.second == TokenType::Identifier,
-                    "subroutineName | className | varName")) return;
+  if (!compileIdentifier("varName"s)) return; // subroutineName | (className | varName)
 
   // '.' or '('
   tokentype = fetchToken(this);
   if (tokentype.first == "."s) {
-    
-    // '.'
-    if ( !writeToken( is_valid(tokentype) &&
-                      tokentype.second == TokenType::Symbol &&
-                      tokentype.first == "."s,
-                      ".")) return;
-
-    // subroutineName | (className | varName)
-    tokentype = fetchToken(this);
-    if (!writeToken(is_valid(tokentype) &&
-      tokentype.second == TokenType::Identifier,
-      "subroutineName | className | varName")) return;
-
-    // ',('
-    tokentype = fetchToken(this);
-    if ( !writeToken( is_valid(tokentype) &&
-                      tokentype.second == TokenType::Symbol &&
-                      tokentype.first == "("s,
-                      "(")) return;
-
+    if (!compileSymbol("."s)) return;
+    if (!compileIdentifier("varName"s)) return; // subroutineName | (className | varName)
+    if (!compileSymbol("("s)) return;
     compileExpressionList();
-
-    // ')'
-    tokentype = fetchToken(this);
-    if ( !writeToken( is_valid(tokentype) &&
-                      tokentype.second == TokenType::Symbol &&
-                      tokentype.first == ")"s,
-                      ")")) return;
-
+    if (!compileSymbol(")"s)) return;
   }
   else if (tokentype.first == "("s) {
-    // '('
-    if ( !writeToken( is_valid(tokentype) &&
-                      tokentype.second == TokenType::Symbol &&
-                      tokentype.first == "("s,
-                      "(")) return;
-
+    if (!compileSymbol("("s)) return;
     compileExpressionList();
-
-    // ')'
-    tokentype = fetchToken(this);
-    if ( !writeToken( is_valid(tokentype) &&
-                      tokentype.second == TokenType::Symbol &&
-                      tokentype.first == ")"s,
-                      ")")) return;
+    if (!compileSymbol(")"s)) return;
   }
   else {
     std::cerr << "File: " << m_source_file_path.filename() << "invalid do statement" << '\n';
     return;
   }
 
-  tokentype = fetchToken(this);
-  if ( !writeToken( is_valid(tokentype) &&
-                    tokentype.second == TokenType::Symbol &&
-                    tokentype.first == ";"s,
-                    ";")) return;
-
+  if (!compileSymbol(";"s)) return;
   m_xml_writer.writeClosingTag("doStatement", Indent::NoChange);
   m_xml_writer.setIndentation(Indent::Decrease);
 
@@ -586,54 +414,20 @@ void CompilationEngine::compileLet()
   m_xml_writer.writeOpeningTag("letStatement", Indent::NoChange);
 
   pair_t tokentype = fetchToken(this);
+  if (!compileKeyword("let"s)) return;
+  if (!compileIdentifier("varName"s)) return;
 
-  // let keyword
-  if ( !writeToken( is_valid(tokentype) &&
-                    tokentype.second == TokenType::Keyword &&
-                    tokentype.first == "let"s,
-                    "let")) return;
-
-  // varName
-  tokentype = fetchToken(this);
-  if ( !writeToken( is_valid(tokentype) &&
-                    tokentype.second == TokenType::Identifier,
-                    "varName")) return;
-
-  // '['
   tokentype = fetchToken(this);
   if (tokentype.first == "["s) {
-    tokentype = fetchToken(this);
-    if ( !writeToken( is_valid(tokentype) &&
-                      tokentype.second == TokenType::Symbol &&
-                      tokentype.first == "["s,
-                      "[")) return;
-
+    if (!compileSymbol("["s)) return;
     compileExpression();
-
-    // ']'
-    tokentype = fetchToken(this);
-    if ( !writeToken( is_valid(tokentype) &&
-                      tokentype.second == TokenType::Symbol &&
-                      tokentype.first == "]"s,
-                      "]")) return;
+    if (!compileSymbol("]"s)) return;
   }
 
-  // '='
-  tokentype = fetchToken(this);
-  if ( !writeToken( is_valid(tokentype) &&
-                    tokentype.second == TokenType::Symbol &&
-                    tokentype.first == "="s,
-                    "=")) return;
-
+  if (!compileSymbol("="s)) return;
   compileExpression();
-
-  // ';'
-  tokentype = fetchToken(this);
-  if ( !writeToken( is_valid(tokentype) &&
-                    tokentype.second == TokenType::Symbol &&
-                    tokentype.first == ";"s,
-                    ";")) return;
-
+  if (!compileSymbol(";"s)) return;
+  
   m_xml_writer.writeClosingTag("letStatement", Indent::NoChange);
   m_xml_writer.setIndentation(Indent::Decrease);
 }
@@ -647,44 +441,15 @@ void CompilationEngine::compileWhile()
   m_xml_writer.writeOpeningTag("whileStatement", Indent::NoChange);
 
   pair_t tokentype = fetchToken(this);
+  if (!compileKeyword("while"s)) return;
 
-  // while keyword
-  if ( !writeToken( is_valid(tokentype) &&
-                    tokentype.second == TokenType::Keyword &&
-                    tokentype.first == "while"s,
-                    "while")) return;
-
-  // '('
-  tokentype = fetchToken(this);
-  if ( !writeToken( is_valid(tokentype) &&
-                    tokentype.second == TokenType::Symbol &&
-                    tokentype.first == "("s,
-                    "(")) return;
-
+  if (!compileSymbol("("s)) return;
   compileExpression();
+  if (!compileSymbol(")"s)) return;
 
-  // ')'
-  tokentype = fetchToken(this);
-  if ( !writeToken( is_valid(tokentype) &&
-                    tokentype.second == TokenType::Symbol &&
-                    tokentype.first == ")"s,
-                    ")")) return;
-  
-  // '{'
-  tokentype = fetchToken(this);
-  if ( !writeToken( is_valid(tokentype) &&
-                    tokentype.second == TokenType::Symbol &&
-                    tokentype.first == "{"s,
-                    "{")) return;
-
+  if (!compileSymbol("{"s)) return;
   compileStatements(); // compile all statements enclosing '{' ... '}'
-
-  // '}'
-  tokentype = fetchToken(this);
-  if ( !writeToken( is_valid(tokentype) &&
-                    tokentype.second == TokenType::Symbol &&
-                    tokentype.first == "}"s,
-                    "}")) return;
+  if (!compileSymbol("}"s)) return;
 
   m_xml_writer.writeClosingTag("whileStatement", Indent::NoChange);
   m_xml_writer.setIndentation(Indent::Decrease);
@@ -699,12 +464,7 @@ void CompilationEngine::compileReturn()
   m_xml_writer.writeOpeningTag("returnStatement", Indent::NoChange);
 
   pair_t tokentype = fetchToken(this);
-
-  // return keyword
-  if ( !writeToken( is_valid(tokentype) &&
-                    tokentype.second == TokenType::Keyword &&
-                    tokentype.first == "return"s,
-                    "return")) return;
+  if (!compileKeyword("return"s)) return;
 
   // check if token is an expression?
   tokentype = fetchToken(this);
@@ -712,12 +472,7 @@ void CompilationEngine::compileReturn()
     compileExpression();
   }
 
-  // ';'
-  tokentype = fetchToken(this);
-  if ( !writeToken( is_valid(tokentype) &&
-                    tokentype.second == TokenType::Symbol &&
-                    tokentype.first == ";"s,
-                    ";")) return;
+  if (!compileSymbol(";"s)) return;
 
   m_xml_writer.writeClosingTag("returnStatement", Indent::NoChange);
   m_xml_writer.setIndentation(Indent::Decrease);
@@ -734,68 +489,24 @@ void CompilationEngine::compileIf()
 
   pair_t tokentype = fetchToken(this);
 
-  // if keyword
-  if ( !writeToken( is_valid(tokentype) &&
-                    tokentype.second == TokenType::Keyword &&
-                    tokentype.first == "if"s,
-                    "if")) return;
+  if (!compileKeyword("if"s)) return;
 
-  // '('
-  tokentype = fetchToken(this);
-  if ( !writeToken( is_valid(tokentype) &&
-                    tokentype.second == TokenType::Symbol &&
-                    tokentype.first == "("s,
-                    "(")) return;
-
+  if (!compileSymbol("("s)) return;
   compileExpression();
+  if (!compileSymbol(")"s)) return;
 
-  // ')'
-  tokentype = fetchToken(this);
-  if ( !writeToken( is_valid(tokentype) &&
-                    tokentype.second == TokenType::Symbol &&
-                    tokentype.first == ")"s,
-                    ")")) return;
-
-  // '{'
-  tokentype = fetchToken(this);
-  if ( !writeToken( is_valid(tokentype) &&
-                    tokentype.second == TokenType::Symbol &&
-                    tokentype.first == "{"s,
-                    "{")) return;
-
+  if (!compileSymbol("{"s)) return;
   compileStatements(); // compile all statements enclosing '{' ... '}'
-
-  // '}'
-  tokentype = fetchToken(this);
-  if ( !writeToken( is_valid(tokentype) &&
-                    tokentype.second == TokenType::Symbol &&
-                    tokentype.first == "}"s,
-                    "}")) return;
+  if (!compileSymbol("}"s)) return;
 
   tokentype = fetchToken(this);
   if (tokentype.first == "else"s) {
 
-    // else keyword
-    if ( !writeToken( is_valid(tokentype) &&
-                      tokentype.second == TokenType::Keyword &&
-                      tokentype.first == "else"s,
-                      "else")) return;
+    if (!compileKeyword("else"s)) return;
 
-    // '{'
-    tokentype = fetchToken(this);
-    if ( !writeToken( is_valid(tokentype) &&
-                      tokentype.second == TokenType::Symbol &&
-                      tokentype.first == "{"s,
-                      "{")) return;
-
+    if (!compileSymbol("{"s)) return;
     compileStatements(); // compile all statements enclosing '{' ... '}'
-
-    // '}'
-    tokentype = fetchToken(this);
-    if ( !writeToken( is_valid(tokentype) &&
-                      tokentype.second == TokenType::Symbol &&
-                      tokentype.first == "}"s,
-                      "}")) return;
+    if (!compileSymbol("}"s)) return;
 
   }
 
@@ -821,6 +532,7 @@ void CompilationEngine::compileExpression()
 
   pair_t tokentype = fetchToken(this);
   while (is_op(tokentype.first)) {
+    if (!compileSymbol(tokentype.first)) return;
     compileTerm();
     tokentype = fetchToken(this);
   }
@@ -832,7 +544,7 @@ void CompilationEngine::compileExpression()
 void CompilationEngine::compileTerm()
 {
   /*
-  * term            : intergerConstant | stringConstant | keywordConstant | varName
+  * term            : intergerConstant | stringConstant | keywordConstant | varName |
   *                   varName '[' expression ']' | subroutineCall | '(' expression ') |
   *                   unaryOp term
   *
@@ -856,7 +568,76 @@ void CompilationEngine::compileTerm()
   // '(' expression ')
   // unaryOp term
 
+  m_xml_writer.setIndentation(Indent::Increase);
+  m_xml_writer.writeOpeningTag("term", Indent::NoChange);
 
+  pair_t tokentype = fetchToken(this);
+
+  switch (tokentype.second)
+  {
+  case JackTokenizer::TokenType::Keyword:
+  {
+    if (!Tk::is_in(tokentype.first, Tk::TRUE, Tk::FALSE, Tk::kNULL, Tk::THIS)) return;
+    if (!compileKeyword(tokentype.first)) return;
+    break;
+  }
+  case JackTokenizer::TokenType::Symbol:
+  {
+    if (tokentype.first == "("s) {
+      if (!compileSymbol("("s)) return;
+      compileExpression();
+      if (!compileSymbol(")"s)) return;
+    }
+    else if (is_in(tokentype.first, "-"s, "~"s)) {
+      if (!compileSymbol(tokentype.first)) return;
+      compileTerm();
+    }
+    else {
+      std::cerr << "File: " << m_source_file_path.filename() << "invalid do statement" << '\n';
+    }
+    break;
+  }
+  case JackTokenizer::TokenType::IntegerConstant:
+    if (!writeToken(true, "interger")) return;
+    break;
+  case JackTokenizer::TokenType::StringConstant:
+    if (!writeToken(true, "string")) return;
+    break;
+  case JackTokenizer::TokenType::Identifier:
+  {
+    if (!compileIdentifier("varName"s)) return; // subroutineName | (className | varName)
+    tokentype = fetchToken(this);
+    if (is_in(tokentype.first, "["s, "("s, "."s)) {
+      if (tokentype.first == "["s) {
+        if (!compileSymbol("["s)) return;
+        compileExpression();
+        if (!compileSymbol("]"s)) return;
+      }
+      else if (tokentype.first == "("s) {
+        if (!compileSymbol("("s)) return;
+        compileExpressionList();
+        if (!compileSymbol(")"s)) return;
+      }
+      else if (tokentype.first == "."s) {
+        if (!compileSymbol("."s)) return;
+        if (!compileIdentifier("varName"s)) return;
+        if (!compileSymbol("("s)) return;
+        compileExpressionList();
+        if (!compileSymbol(")"s)) return;
+      }
+      else {
+        std::cerr << "File: " << m_source_file_path.filename() << "invalid term statement" << '\n';
+      }
+    }
+    break;
+  }
+  [[falthrough]] case JackTokenizer::TokenType::Invalid:
+  default:
+    break;
+  }
+
+  m_xml_writer.writeClosingTag("term", Indent::NoChange);
+  m_xml_writer.setIndentation(Indent::Decrease);
 }
 
 void CompilationEngine::compileExpressionList()
@@ -873,6 +654,7 @@ void CompilationEngine::compileExpressionList()
     compileExpression();
     tokentype = fetchToken(this);
     while (tokentype.first == ","s) {
+      if (!compileSymbol(tokentype.first)) return;
       compileExpression();
       tokentype = fetchToken(this);
     }
@@ -880,4 +662,44 @@ void CompilationEngine::compileExpressionList()
 
   m_xml_writer.writeClosingTag("expressionList", Indent::NoChange);
   m_xml_writer.setIndentation(Indent::Decrease);
+}
+
+
+
+bool CompilationEngine::compileKeyword(const std::string& keyword)
+{
+  pair_t tokentype = fetchToken(this);
+  return writeToken(is_valid(tokentype) &&
+    tokentype.second == TokenType::Keyword &&
+    tokentype.first == keyword,
+    keyword.c_str()
+  );
+}
+
+bool CompilationEngine::compileSymbol(const std::string& symbol)
+{
+  pair_t tokentype = fetchToken(this);
+  return (writeToken(is_valid(tokentype) &&
+    tokentype.second == TokenType::Symbol &&
+    tokentype.first == symbol,
+    symbol.c_str())
+    );
+}
+
+bool CompilationEngine::compileIdentifier(const std::string& identifier)
+{
+  pair_t tokentype = fetchToken(this);
+  return writeToken(is_valid(tokentype) &&
+    tokentype.second == TokenType::Identifier,
+    identifier.c_str()
+  );
+}
+
+bool CompilationEngine::compileType(const std::string& type)
+{
+  pair_t tokentype = fetchToken(this);
+  return writeToken(is_valid(tokentype) &&
+    is_in(tokentype.second, TokenType::Keyword, TokenType::Identifier),
+    type.c_str()
+  );
 }

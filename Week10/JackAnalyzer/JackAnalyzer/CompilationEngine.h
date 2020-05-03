@@ -80,6 +80,7 @@ public:
   */
   void compileIf();
 
+ 
   /**
   * Compiles an expression
   */
@@ -108,8 +109,11 @@ public:
   [[nodiscard]] const std::filesystem::path getSourceFilePath() const noexcept { return m_source_file_path; }
 private:
   bool writeToken(bool res, const char* msg = "");
-  bool writeKeyword();
-  bool writeSymbol();
+  bool compileKeyword(const std::string& keyword);
+  bool compileSymbol(const std::string& symbol);
+  bool compileIdentifier(const std::string& keyword);
+  bool compileType(const std::string& keyword);
+
 private:
   std::filesystem::path m_source_file_path;
   std::filesystem::path m_output_file_path;
