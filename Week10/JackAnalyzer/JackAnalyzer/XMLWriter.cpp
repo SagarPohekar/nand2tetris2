@@ -12,21 +12,7 @@ XMLWriter::~XMLWriter()
 
 void XMLWriter::writeTag(std::string_view tag, std::string_view val, Indent idt, bool opening, bool closing)
 {
-  switch (idt)
-  {
-  case XMLWriter::Indent::Decrease:
-    m_indent = m_indent - static_cast<int>(idt);
-    break;
-  case XMLWriter::Indent::Default:
-    m_indent = 0;
-    break;
-  case XMLWriter::Indent::Increase:
-    m_indent = m_indent + static_cast<int>(idt);
-    break;
-  [[falthrough]] case XMLWriter::Indent::NoChange:
-  default:
-    break;
-  }
+  setIndentation(idt);
   
   m_indent = m_indent >= 0 ? m_indent : 0;
   const std::string indent(m_indent, '\t');
@@ -51,4 +37,23 @@ void XMLWriter::writeOpeningTag(std::string_view tag, Indent idt)
 void XMLWriter::writeClosingTag(std::string_view tag, Indent idt)
 {
   writeTag(tag, "", idt, false, true);
+}
+
+void XMLWriter::setIndentation(Indent idt)
+{
+  switch (idt)
+  {
+  case XMLWriter::Indent::Decrease:
+    m_indent = m_indent - 1;
+    break;
+  case XMLWriter::Indent::Default:
+    m_indent = 0;
+    break;
+  case XMLWriter::Indent::Increase:
+    m_indent = m_indent + 1;
+    break;
+  [[falthrough]] case XMLWriter::Indent::NoChange:
+  default:
+    break;
+  }
 }

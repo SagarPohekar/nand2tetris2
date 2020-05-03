@@ -53,7 +53,7 @@ public:
   * Compiles sequence of statements , not
   * including   enclosing {}
   */
-  void compileVarStatements();
+  void compileStatements();
 
   /**
   * Compiles 'do' statements
@@ -86,20 +86,30 @@ public:
   void compileExpression();
 
   /**
-  * Compiles complete class
+  * Compiles a term. This routine is faced With a slight difficulty
+  * when trying to decide between some of the alternative parsing
+  * rules. Specifically, if the current token is an identifier,
+  * the routine must distinguish between a variable, an array entry,
+  * and a subroutine call.
+  * A single look-ahead token, which may be one Of ' ' , or to
+  * distinguish between the three possibilities. Any other token is not
+  * part of this term and should not be advanced over.
   */
   void compileTerm();
 
   /**
-  * Compiles complete class
+  * Compiles a (possibly empty) comma-separated list or expressions.
   */
   void compileExpressionList();
 
+  
   std::queue<pair_t>& getNextToken();
 
   [[nodiscard]] const std::filesystem::path getSourceFilePath() const noexcept { return m_source_file_path; }
 private:
-
+  bool writeToken(bool res, const char* msg = "");
+  bool writeKeyword();
+  bool writeSymbol();
 private:
   std::filesystem::path m_source_file_path;
   std::filesystem::path m_output_file_path;

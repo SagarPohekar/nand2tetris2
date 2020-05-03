@@ -47,12 +47,18 @@ namespace Tk
     
   }
 
-  template<typename T, typename... Args>
-  bool CompareOR(const T& first, Args...args)
+  template<typename T>
+  bool Compare(const T& first, const T& second)
   {
-    std::vector<T> container{ args... };
-    return std::any_of(container.begin(), container.end(), [&](auto& c) { return c == first; });
+    return first == second;
   }
+
+  template<typename First, typename ... T>
+  bool is_in(First&& first, T&& ... t)
+  {
+    return ((first == t) || ...);
+  }
+
 }
 class JackTokenizer
 {
