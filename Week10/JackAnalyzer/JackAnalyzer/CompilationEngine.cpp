@@ -26,7 +26,9 @@ namespace Utils
     else return q.front();
   };
 
-  auto is_valid = [](const CompilationEngine::pair_t& p) { return p.second != JackTokenizer::TokenType::Invalid; };
+  auto is_valid = [](const CompilationEngine::pair_t& p) { 
+    return p.second != JackTokenizer::TokenType::Invalid;
+  };
 }
 
 using namespace Utils;
@@ -35,6 +37,9 @@ using Indent = XMLWriter::Indent;
 using KeywordSubtype = JackTokenizer::KeywordSubtype;
 using TokenType = JackTokenizer::TokenType;
 
+//-----------------------------------------------------------------------------------
+// CompilationEngine::Constructor
+//-----------------------------------------------------------------------------------
 CompilationEngine::CompilationEngine(const std::filesystem::path& sourceFilePath)
   : m_source_file_path{ sourceFilePath },
     m_output_file_path{ sourceFilePath },
@@ -48,6 +53,9 @@ CompilationEngine::CompilationEngine(const std::filesystem::path& sourceFilePath
   compileClass();
 }
 
+//-----------------------------------------------------------------------------------
+// CompilationEngine::Destructor
+//-----------------------------------------------------------------------------------
 CompilationEngine::~CompilationEngine() noexcept
 {
   if (m_output_file.is_open()) {
@@ -55,6 +63,9 @@ CompilationEngine::~CompilationEngine() noexcept
   }
 }
 
+//-----------------------------------------------------------------------------------
+// CompilationEngine::getNextToken
+//-----------------------------------------------------------------------------------
 std::queue<CompilationEngine::pair_t>& CompilationEngine::getNextToken()
 {
   if (m_jack_tokenizer.hasMoreTokens() && m_token_q.empty()) {
@@ -69,6 +80,9 @@ std::queue<CompilationEngine::pair_t>& CompilationEngine::getNextToken()
   return m_token_q;
 }
 
+//-----------------------------------------------------------------------------------
+// CompilationEngine::writeToken
+//-----------------------------------------------------------------------------------
 bool CompilationEngine::writeToken(bool res, const char* msg)
 {
   pair_t tokentype = fetchToken(this);
@@ -90,6 +104,9 @@ bool CompilationEngine::writeToken(bool res, const char* msg)
   return true;
 }
 
+//-----------------------------------------------------------------------------------
+// CompilationEngine::InitalizeMethodMap
+//-----------------------------------------------------------------------------------
 void CompilationEngine::InitalizeMethodMap()
 {
   m_methods[JackTokenizer::KeywordSubtype::LET] = &CompilationEngine::compileLet;
@@ -99,6 +116,9 @@ void CompilationEngine::InitalizeMethodMap()
   m_methods[JackTokenizer::KeywordSubtype::RETURN] = &CompilationEngine::compileReturn;
 }
 
+//-----------------------------------------------------------------------------------
+// CompilationEngine::compileClass
+//-----------------------------------------------------------------------------------
 void CompilationEngine::compileClass()
 {
   /*
@@ -143,6 +163,9 @@ void CompilationEngine::compileClass()
   m_xml_writer.writeClosingTag("class");
 }
 
+//-----------------------------------------------------------------------------------
+// CompilationEngine::compileClassVarDec
+//-----------------------------------------------------------------------------------
 void CompilationEngine::compileClassVarDec()
 {
   /*Grammar         :
@@ -181,6 +204,9 @@ void CompilationEngine::compileClassVarDec()
   }
 }
 
+//-----------------------------------------------------------------------------------
+// CompilationEngine::compileSubroutine
+//-----------------------------------------------------------------------------------
 void CompilationEngine::compileSubroutine()
 {
   /*
@@ -238,6 +264,9 @@ void CompilationEngine::compileSubroutine()
   
 }
 
+//-----------------------------------------------------------------------------------
+// CompilationEngine::compileParameterList
+//-----------------------------------------------------------------------------------
 void CompilationEngine::compileParameterList()
 {
   /*
@@ -273,6 +302,9 @@ void CompilationEngine::compileParameterList()
   m_xml_writer.setIndentation(Indent::Decrease);
 }
 
+//-----------------------------------------------------------------------------------
+// CompilationEngine::compileVarDec
+//-----------------------------------------------------------------------------------
 void CompilationEngine::compileVarDec()
 {
   /*
@@ -314,6 +346,9 @@ void CompilationEngine::compileVarDec()
   }
 }
 
+//-----------------------------------------------------------------------------------
+// CompilationEngine::compileStatements
+//-----------------------------------------------------------------------------------
 void CompilationEngine::compileStatements()
 {
   /*
@@ -363,6 +398,9 @@ void CompilationEngine::compileStatements()
   m_xml_writer.setIndentation(Indent::Decrease);
 }
 
+//-----------------------------------------------------------------------------------
+// CompilationEngine::compileDo
+//-----------------------------------------------------------------------------------
 void CompilationEngine::compileDo()
 {
   /*
@@ -405,6 +443,9 @@ void CompilationEngine::compileDo()
 
 }
 
+//-----------------------------------------------------------------------------------
+// CompilationEngine::compileLet
+//-----------------------------------------------------------------------------------
 void CompilationEngine::compileLet()
 {
   /*
@@ -432,6 +473,9 @@ void CompilationEngine::compileLet()
   m_xml_writer.setIndentation(Indent::Decrease);
 }
 
+//-----------------------------------------------------------------------------------
+// CompilationEngine::compileWhile
+//-----------------------------------------------------------------------------------
 void CompilationEngine::compileWhile()
 {
   /*
@@ -455,6 +499,9 @@ void CompilationEngine::compileWhile()
   m_xml_writer.setIndentation(Indent::Decrease);
 }
 
+//-----------------------------------------------------------------------------------
+// CompilationEngine::compileReturn
+//-----------------------------------------------------------------------------------
 void CompilationEngine::compileReturn()
 {
   /*
@@ -478,6 +525,9 @@ void CompilationEngine::compileReturn()
   m_xml_writer.setIndentation(Indent::Decrease);
 }
 
+//-----------------------------------------------------------------------------------
+// CompilationEngine::compileIf
+//-----------------------------------------------------------------------------------
 void CompilationEngine::compileIf()
 {
   /*
@@ -514,6 +564,9 @@ void CompilationEngine::compileIf()
   m_xml_writer.setIndentation(Indent::Decrease);
 }
 
+//-----------------------------------------------------------------------------------
+// CompilationEngine::compileExpression
+//-----------------------------------------------------------------------------------
 void CompilationEngine::compileExpression()
 {
   /*
@@ -541,6 +594,9 @@ void CompilationEngine::compileExpression()
   m_xml_writer.setIndentation(Indent::Decrease);
 }
 
+//-----------------------------------------------------------------------------------
+// CompilationEngine::compileTerm
+//-----------------------------------------------------------------------------------
 void CompilationEngine::compileTerm()
 {
   /*
@@ -559,14 +615,6 @@ void CompilationEngine::compileTerm()
   *
   * keywordConstant : 'true' | 'false' | 'null' | 'this'
   */
-  // intergerConstant     : [0-9]+
-  // stringConstant       : ^\".+$\"
-  // keywordConstant      : "true" | "false" | "null" | "this"
-  // varName
-  // varName '[' expression ']'
-  // subroutineCall
-  // '(' expression ')
-  // unaryOp term
 
   m_xml_writer.setIndentation(Indent::Increase);
   m_xml_writer.writeOpeningTag("term", Indent::NoChange);
@@ -640,6 +688,9 @@ void CompilationEngine::compileTerm()
   m_xml_writer.setIndentation(Indent::Decrease);
 }
 
+//-----------------------------------------------------------------------------------
+// CompilationEngine::compileExpressionList
+//-----------------------------------------------------------------------------------
 void CompilationEngine::compileExpressionList()
 {
   /*
@@ -664,8 +715,9 @@ void CompilationEngine::compileExpressionList()
   m_xml_writer.setIndentation(Indent::Decrease);
 }
 
-
-
+//-----------------------------------------------------------------------------------
+// CompilationEngine::compileKeyword
+//-----------------------------------------------------------------------------------
 bool CompilationEngine::compileKeyword(const std::string& keyword)
 {
   pair_t tokentype = fetchToken(this);
@@ -676,6 +728,9 @@ bool CompilationEngine::compileKeyword(const std::string& keyword)
   );
 }
 
+//-----------------------------------------------------------------------------------
+// CompilationEngine::compileSymbol
+//-----------------------------------------------------------------------------------
 bool CompilationEngine::compileSymbol(const std::string& symbol)
 {
   pair_t tokentype = fetchToken(this);
@@ -686,6 +741,9 @@ bool CompilationEngine::compileSymbol(const std::string& symbol)
     );
 }
 
+//-----------------------------------------------------------------------------------
+// CompilationEngine::compileIdentifier
+//-----------------------------------------------------------------------------------
 bool CompilationEngine::compileIdentifier(const std::string& identifier)
 {
   pair_t tokentype = fetchToken(this);
@@ -695,6 +753,9 @@ bool CompilationEngine::compileIdentifier(const std::string& identifier)
   );
 }
 
+//-----------------------------------------------------------------------------------
+// CompilationEngine::compileType
+//-----------------------------------------------------------------------------------
 bool CompilationEngine::compileType(const std::string& type)
 {
   pair_t tokentype = fetchToken(this);
@@ -703,3 +764,5 @@ bool CompilationEngine::compileType(const std::string& type)
     type.c_str()
   );
 }
+
+
